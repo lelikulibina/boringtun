@@ -1,6 +1,7 @@
 name: PR Status Checks
 
 on:
+  workflow_dispatch:
   push:
     branches: [ "master" ]
   pull_request:

@@ -77,6 +77,7 @@ struct AwgParams {
     h2: Option<(u32, u32)>,
     h3: Option<(u32, u32)>,
     h4: Option<(u32, u32)>,
+    i_packets: [Option<String>; 5],
     seen: bool,
 }
 
@@ -103,6 +104,11 @@ impl AwgParams {
             "h4" => self.h4 = Some(range),
             _ => unreachable!("caller matched the key"),
         }
+        self.seen = true;
+    }
+
+    fn set_signature_packet(&mut self, index: usize, value: &str) {
+        self.i_packets[index] = Some(value.to_owned());
         self.seen = true;
     }
 
@@ -157,12 +163,26 @@ impl AwgParams {
         amnezia.response_packet_junk_size = self.s2.unwrap_or(amnezia.response_packet_junk_size);
         amnezia.cookie_packet_junk_size = self.s3.unwrap_or(amnezia.cookie_packet_junk_size);
         amnezia.transport_packet_junk_size = self.s4.unwrap_or(amnezia.transport_packet_junk_size);
-        let amnezia = amnezia.with_pre_handshake_junk(
+        let mut amnezia = amnezia.with_pre_handshake_junk(
             self.jc.unwrap_or(cur_junk.packet_count),
             self.jmin.unwrap_or(cur_junk.packet_size_min),
             self.jmax.unwrap_or(cur_junk.packet_size_max),
             cur_junk.packet_delay_ms,
         );
+        for (index, spec) in self.i_packets.iter().enumerate() {
+            if let Some(spec) = spec {
+                amnezia
+                    .set_signature_packet(index, spec)
+                    .map_err(|error| {
+                        tracing::error!(
+                            message = "rejecting invalid AmneziaWG signature packet",
+                            index = index + 1,
+                            error = %error
+                        );
+                        EINVAL
+                    })?;
+            }
+        }
 
         // Reject sizes that could never emit a valid datagram, before anything
         // is committed. Without this, an oversized S value is accepted here and
@@ -403,6 +423,12 @@ fn api_get(writer: &mut BufWriter<&UnixStream>, d: &Device) -> i32 {
                 }
             }
         }
+
+        for index in 0..5 {
+            if let Some(spec) = a.signature_packet_spec(index) {
+                writeln!(writer, "i{}={}", index + 1, spec);
+            }
+        }
     }
 
     // Walk the trie once and group by owner. `peers_by_ip` remains the only
@@ -566,7 +592,11 @@ fn api_set(reader: &mut BufReader<&UnixStream>, d: &mut LockReadGuard<Device>) -
                         // AWG 2.0 signature packets. A responder only has to
                         // tolerate these; accept and ignore rather than failing
                         // the whole transaction on a config that carries them.
-                        "i1" | "i2" | "i3" | "i4" | "i5" => {}
+                        "i1" => awg.set_signature_packet(0, val),
+                        "i2" => awg.set_signature_packet(1, val),
+                        "i3" => awg.set_signature_packet(2, val),
+                        "i4" => awg.set_signature_packet(3, val),
+                        "i5" => awg.set_signature_packet(4, val)
                         _ => return EINVAL,
                     }
                 }

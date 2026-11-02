@@ -295,3 +295,14 @@ A deeper read of the pinned `device/send.go` and `device/receive.go` corrects an
 - The previous wording that described the transport message as a whole being masked was imprecise; implementation and tests must use the packet-kind-specific ranges above.
 
 Pinned references: `device/send.go`, `device/receive.go`, `device/noise-types.go`, tag `v3.1.20260828`.
+
+
+### 2026-11-02 — interop harness gating and local helper checks
+
+- Corrected the positive interop flow so ICMP/TCP/UDP checks run only after `handshaked()` succeeds. A failed handshake is now reported as the primary failure and the traffic checks are explicitly skipped.
+- The background Python echo server PID is tracked and reaped both after the traffic test and during global teardown.
+- Local checks in this execution environment: `python3 -m py_compile` passed for the helper; a loopback run echoed 262,144 TCP bytes and a 1,200-byte UDP datagram byte-for-byte; the extracted updated Bash lifecycle/traffic functions passed `bash -n`.
+- These checks do not execute the complete 21-KB namespace harness. It has not been run against either tunnel implementation.
+- Rust compiler validation remains unavailable: neither `cargo` nor `rustc` is installed, and DNS resolution for `static.rust-lang.org` fails in this execution environment, so the toolchain cannot be installed here.
+- Latest PR #5 head: `c0fba7acf852cfb1a8be7a8005de10dc38f00f4b`. GitHub Actions runs `41440438173`, `41440436450`, and `41440429686` ended in `startup_failure`; the workflow run API reports zero jobs. This is an infrastructure startup failure, not a failing test.
+- PR #5 remains draft and unmerged. PR #3 and PR #4 remain unmerged. No source branch or final release branch was merged.

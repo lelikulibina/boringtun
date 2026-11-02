@@ -266,3 +266,7 @@ Real cross-implementation tests require two independently running endpoints and 
 - The UDP size is chosen to fit the harness's 1420-byte tunnel MTU with the configured S4 prefix and WireGuard overhead.
 - This adds coverage only; it is not a test result. The helper and namespace harness have **not** been executed in this environment. The cross-implementation role remains amneziawg-go client → BoringTun server; reverse-role testing is still outstanding.
 - The I1–I5 protocol implementation is unchanged. Rust compilation, formatting, clippy, unit tests and live interop remain blocked pending an actual CI run.
+
+
+- Local-only functional check: the Python helper was syntax-parsed and then run with its endpoint changed to loopback; it successfully echoed 262,144 TCP bytes and 1,200 UDP bytes byte-for-byte. This validates the helper's socket logic, **not** the tunnel or namespace harness.
+- GitHub Actions was observed again after the branch update. The latest `PR Status Checks` run (`41439474240`) and Semgrep run (`41439472908`) both ended in `startup_failure`; the workflow-runs API reports no jobs for these runs. GitHub defines `startup_failure` as a check-suite startup failure, not a job-level test failure. No Rust or network test has started, so the protocol stage remains blocked.

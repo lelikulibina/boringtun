@@ -66,6 +66,10 @@ impl SignaturePacket {
                         Err("empty argument".to_owned())
                     } else if value.len() % 2 != 0 {
                         Err("odd amount of hex symbols".to_owned())
+                    } else if value.len() / 2 > MAX_SIGNATURE_PACKET_SIZE {
+                        Err(format!(
+                            "byte prefix exceeds {MAX_SIGNATURE_PACKET_SIZE} bytes"
+                        ))
                     } else {
                         hex::decode(value)
                             .map(Transform::Bytes)

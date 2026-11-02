@@ -3,6 +3,7 @@
 
 pub mod amnezia;
 pub mod errors;
+pub(crate) mod obfuscation;
 pub mod handshake;
 // `pub(crate)` rather than private: `device::probe_reply` builds the replies
 // from the same modules that generate the outbound cover traffic, which is the

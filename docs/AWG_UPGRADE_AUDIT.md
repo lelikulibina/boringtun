@@ -270,3 +270,16 @@ Real cross-implementation tests require two independently running endpoints and 
 
 - Local-only functional check: the Python helper was syntax-parsed and then run with its endpoint changed to loopback; it successfully echoed 262,144 TCP bytes and 1,200 UDP bytes byte-for-byte. This validates the helper's socket logic, **not** the tunnel or namespace harness.
 - GitHub Actions was observed again after the branch update. The latest `PR Status Checks` run (`41439474240`) and Semgrep run (`41439472908`) both ended in `startup_failure`; the workflow-runs API reports no jobs for these runs. GitHub defines `startup_failure` as a check-suite startup failure, not a job-level test failure. No Rust or network test has started, so the protocol stage remains blocked.
+
+
+### Header-protection integration map — static source review
+
+The next Rust stage should be implemented around these confirmed call sites, rather than adding a detached cipher helper:
+
+- Outbound packets of all four kinds converge on `Tunn::write_to_network`, which currently calls `AmneziaConfig::prepend_outbound`. This is the central point to add header masking **after** S-prefix bytes have been generated, so the first 12 prefix bytes can be used as the ChaCha20 nonce and the complete fixed/transport message (including handshake MACs) can be masked.
+- Inbound packets enter `Tunn::decapsulate`, which currently calls `strip_inbound` before `RateLimiter::verify_packet` and packet parsing. Header unmasking must happen before `strip_inbound`, otherwise the masked H1-H4 type cannot be classified. The current `datagram: &[u8]` API is immutable; the implementation needs a bounded mutable scratch copy or a carefully redesigned receive buffer. Reusing `dst` is unsafe because the caller's tunnel-output buffer is not guaranteed to hold the full UDP datagram.
+- The key belongs to interface-wide Amnezia configuration and must participate in the existing transactional UAPI merge. A non-zero key is valid only when all S1-S4 prefix lengths are at least 12 bytes; validate the merged tuple atomically, not one UAPI line at a time.
+- The pinned Go sender creates a ChaCha20 stream using the first 12 S-prefix bytes as nonce, starts at the stream beginning, and XORs the complete Noise message after MAC generation. The receiver first recovers the masked message type from the first four keystream bytes, identifies the matching S/H pair, then continues the same stream over the remaining message bytes. A zero key disables masking.
+- Tests must cover each of H1/H2/H3/H4, both zero and non-zero key, nonce changes, wrong S/H candidate, truncated prefixes, invalid key/S combinations, MAC verification after unmasking, and transport receiver-index/counter recovery. Cross-implementation packet captures are required before declaring parity.
+
+This is a call-site and ordering map only. No header-protection code has been added, compiled or tested in this stage.

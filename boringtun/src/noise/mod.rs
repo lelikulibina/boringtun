@@ -1503,6 +1503,35 @@ mod tests {
     }
 
     #[test]
+    fn forced_handshake_retry_drains_pending_i_packets_without_restarting_them() {
+        let mut amnezia = AmneziaConfig::default();
+        amnezia
+            .set_signature_packet(0, "<b 0x41>")
+            .expect("valid I1");
+        amnezia
+            .set_signature_packet(1, "<b 0x42>")
+            .expect("valid I2");
+        let (mut client, _) = create_two_tuns_with_amnezia(amnezia);
+        let mut dst = vec![0u8; 2048];
+
+        let first = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+        assert_eq!(first, vec![0x41]);
+
+        // A forced retry while pre-handshake output is pending must continue
+        // the existing sequence, not regenerate and replay I1.
+        let second = unwrap_network_packet(client.format_handshake_initiation(&mut dst, true));
+        assert_eq!(second, vec![0x42]);
+
+        let initiation =
+            unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+        assert_eq!(
+            u32::from_le_bytes(initiation[..4].try_into().unwrap()),
+            HANDSHAKE_INIT
+        );
+        assert!(client.pending_amnezia_junk.is_none());
+    }
+
+    #[test]
     fn updating_obfuscation_discards_stale_pending_i_packets() {
         let mut initial = AmneziaConfig::default();
         initial

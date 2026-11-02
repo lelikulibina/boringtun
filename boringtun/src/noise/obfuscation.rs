@@ -182,7 +182,7 @@ impl SignaturePacket {
                     // Big-endian source length, matching the reference. The
                     // source is empty for standalone pre-handshake packets.
                     let start = output.len();
-                    output.resize(start + length, 0);
+                    output.resize(start + *length, 0);
                 }
             }
         }

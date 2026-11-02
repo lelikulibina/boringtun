@@ -55,7 +55,23 @@ readonly H1=169887817 H2=390382747 H3=1033691040 H4=1526332224
 # One definition. This was written out inline in both `start_pair` and
 # `start_bt_pair`, and the two copies had already drifted apart in formatting --
 # which is how a difference in the *values* would arrive next.
-AWG_BLOCK=$'jc='"$JC"$'\njmin='"$JMIN"$'\njmax='"$JMAX"$'\ns1='"$S1"$'\ns2='"$S2"$'\ns3='"$S3"$'\ns4='"$S4"$'\nh1='"$H1"$'\nh2='"$H2"$'\nh3='"$H3"$'\nh4='"$H4"$'\n'
+AWG_BLOCK=$(printf '%s\n' \
+  "jc=$JC" \
+  "jmin=$JMIN" \
+  "jmax=$JMAX" \
+  "s1=$S1" \
+  "s2=$S2" \
+  "s3=$S3" \
+  "s4=$S4" \
+  "h1=$H1" \
+  "h2=$H2" \
+  "h3=$H3" \
+  "h4=$H4" \
+  "i1=<b 0x414d4e455a4941>" \
+  "i2=<t>" \
+  "i3=<r 16>" \
+  "i4=<rc 8>" \
+  "i5=<rd 8>")
 readonly AWG_BLOCK
 
 genkey() { head -c32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }

@@ -106,3 +106,21 @@ Real cross-implementation tests require two independently running endpoints and 
 - Confirmed official I-packet parser supports eight transform tags, beyond the simplified examples in the README.
 - No protocol implementation changes have been made yet. The audit branch contains documentation only.
 - Next: complete detailed source-to-source mapping and establish baseline build/test results; then create a separate implementation branch from the reviewed audit snapshot.
+
+### 2026-11-02 — interoperability harness stage
+
+- Created implementation/test-infrastructure branch `awg-3.1-core` from the isolated audit branch; the original source branches remain untouched.
+- Expanded the GitHub Actions branch filters to cover isolated `awg-*` work branches.
+- The existing `scripts/awg-go-interop.sh` was restored unchanged after an attempted extension produced malformed shell syntax. It currently validates the original amneziawg-go-client to BoringTun-server path and ICMP traffic only. Reverse-role and TCP/UDP coverage remain outstanding.
+- Added an Ubuntu CI job that builds BoringTun, builds the exact official `v3.1.20260828` tag, and runs the existing namespace-based interop harness (currently one direction, ICMP).
+- Opened draft PR #1 against `awg-audit` only as a review/CI checkpoint: https://github.com/lelikulibina/boringtun/pull/1. It is explicitly marked draft and must not be merged.
+- At this checkpoint, GitHub's status endpoint has not returned any checks/workflow runs. Therefore the new harness and CI job are **not yet verified as executed**. Do not mark this stage passed until the workflow result is observed and failures are fixed.
+- No AWG 3.1 protocol implementation is included in this branch; it prepares audit and CI infrastructure. The interop harness extension was deliberately reverted before it could contaminate the test baseline.
+- Next: obtain a green baseline CI/interoperability run; complete the per-feature source-to-source audit; then implement the first AWG 3.1 protocol feature in its own branch with unit tests and cross-implementation checks.
+
+### 2026-11-02 — correction of interop harness status
+
+- Reverted an attempted modification of `scripts/awg-go-interop.sh` after inspection exposed malformed shell syntax and duplicated trailing shell text. The original script from `awg-2.0-extensions` is restored; the unintegrated Python traffic helper was deleted.
+- The CI job tests only the original official-client-to-BoringTun-server path and ICMP. Reverse-role and TCP/UDP checks remain outstanding.
+- No protocol implementation changes are included in this branch.
+- CI has not returned workflow runs or status checks for this branch. Do not treat build or interop as passed until real results appear.

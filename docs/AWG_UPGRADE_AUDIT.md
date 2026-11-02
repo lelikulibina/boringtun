@@ -182,3 +182,10 @@ Real cross-implementation tests require two independently running endpoints and 
 - A local clone attempt failed because the execution environment cannot resolve `github.com`; `rustc` and `cargo` are not installed in that environment. No local Cargo build or test can be honestly reported.
 - The shell block used to construct the interop UAPI settings was separately checked with `bash -n`; the full namespace harness has not been run.
 - Required next action before closing the I-packet stage: make GitHub Actions actually execute (verify repository Actions settings or run the workflow in an enabled runner), fix all compiler/test findings, then run the namespace interop test with I1-I5 and confirm the actual handshake/ICMP result. Add reverse-role and TCP/UDP tests before considering the stage complete.
+
+### 2026-11-02 — static review follow-up
+
+- A second source review found two borrowed-length arithmetic expressions in the I-packet encoder that would fail Rust type checking (`usize + &usize`). Both the random-digit and data-size branches now dereference the borrowed transform length.
+- This is a static-review correction only. There is still no compiler/test output from CI or a local Rust toolchain, so the branch is **not build-verified**.
+- Added `workflow_dispatch` to the workflow on `awg-3.1-core`, so a maintainer can manually run the complete validation workflow from the Actions tab after confirming repository Actions are enabled. Push and pull-request triggers remain in place.
+- Repository-wide Actions query still reports zero runs. This cannot be resolved through the available GitHub connection because it exposes read-only repository/workflow inspection, not the repository Actions enablement settings or a workflow-dispatch write operation.

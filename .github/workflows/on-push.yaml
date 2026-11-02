@@ -10,7 +10,7 @@ on:
   push:
     branches: [ "master", "awg-2.0-extensions", "awg-*" ]
   pull_request:
-    branches: [ "master", "awg-2.0-extensions" ]
+    branches: [ "master", "awg-2.0-extensions", "awg-*" ]
 
 jobs:
   # Depends on all actions that are required for a "successful" CI run.

@@ -169,7 +169,7 @@ impl SignaturePacket {
                 }
                 Transform::RandomDigits(length) => {
                     let start = output.len();
-                    output.resize(start + length, 0);
+                    output.resize(start + *length, 0);
                     rng.fill_bytes(&mut output[start..]);
                     for byte in &mut output[start..] {
                         *byte = DIGITS10[(*byte as usize) % DIGITS10.len()];

@@ -283,3 +283,15 @@ The next Rust stage should be implemented around these confirmed call sites, rat
 - Tests must cover each of H1/H2/H3/H4, both zero and non-zero key, nonce changes, wrong S/H candidate, truncated prefixes, invalid key/S combinations, MAC verification after unmasking, and transport receiver-index/counter recovery. Cross-implementation packet captures are required before declaring parity.
 
 This is a call-site and ordering map only. No header-protection code has been added, compiled or tested in this stage.
+
+
+### Header-protection source review correction — exact masked byte ranges
+
+A deeper read of the pinned `device/send.go` and `device/receive.go` corrects an overly broad phrase in the earlier integration map:
+
+- Handshake initiation, response and cookie reply: after MAC generation, ChaCha20 XOR covers the complete fixed-size Noise message (from message type through MAC fields), excluding S-prefix and random trailer.
+- Transport data: ChaCha20 XOR covers **only the 16-byte transport header** (type + receiver index + counter), not the AEAD ciphertext/content. The receiver first derives four keystream bytes to classify H4, then applies those four bytes to the type and consumes the next 12 stream bytes for receiver/counter. The encrypted payload remains untouched for normal AEAD verification.
+- The cipher is initialized from the first 12 bytes of the S-prefix, uses the configured 32-byte key, and begins at stream position zero for each datagram.
+- The previous wording that described the transport message as a whole being masked was imprecise; implementation and tests must use the packet-kind-specific ranges above.
+
+Pinned references: `device/send.go`, `device/receive.go`, `device/noise-types.go`, tag `v3.1.20260828`.

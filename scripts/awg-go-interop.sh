@@ -371,9 +371,11 @@ EOF
   return 0
 }
 
-# Reverse the endpoint roles: official amneziawg-go is the server and
-# BoringTun is the client. This catches asymmetries hidden by a one-way test.
+
+# Reverse endpoint roles: the official implementation is the server and
+# BoringTun is the client. Both UAPI transactions are checked before testing.
 start_reverse_pair() {
+  local srv_obf=$1 cli_obf=$2
   teardown
   build_underlay || return 1
 
@@ -385,16 +387,20 @@ start_reverse_pair() {
     "$GO" -f "$IF_SRV" >"$SRV_LOG" 2>&1 &
   own_socks "$IF_CLI"
   ip netns exec "$NS_CLI" env WG_LOG_FILE="$BTCLI_LOG" WG_LOG_LEVEL=debug \
-    "$BT" --disable-drop-privileges "$@" "$IF_CLI" >/dev/null 2>&1
+    "$BT" --disable-drop-privileges "$IF_CLI" >/dev/null 2>&1
 
   wait_sock "$IF_SRV" || { echo "amneziawg-go server socket never appeared"; return 1; }
   wait_sock "$IF_CLI" || { echo "BoringTun client socket never appeared"; return 1; }
+
+  local SRV_OBF='' CLI_OBF=''
+  [ "$srv_obf" = 1 ] && SRV_OBF=$AWG_BLOCK
+  [ "$cli_obf" = 1 ] && CLI_OBF=$AWG_BLOCK
 
   uapi "$NS_SRV" "$IF_SRV" >"$SRV_SET" <<EOF
 set=1
 private_key=$SRV_KEY
 listen_port=$PORT
-${AWG_BLOCK}public_key=$CLI_PUB
+${SRV_OBF}public_key=$CLI_PUB
 allowed_ip=$CLI_TUN/32
 
 EOF
@@ -402,7 +408,7 @@ EOF
 set=1
 private_key=$CLI_KEY
 listen_port=51821
-${AWG_BLOCK}public_key=$SRV_PUB
+${CLI_OBF}public_key=$SRV_PUB
 endpoint=$SRV_LINK:$PORT
 persistent_keepalive_interval=5
 allowed_ip=$SRV_TUN/32
@@ -442,7 +448,7 @@ else
     bad "handshake but no data -- the transport path disagrees"
   fi
   if run_tcp_udp_traffic; then
-    ok "TCP 4 MiB echo and 64 UDP datagrams traverse the tunnel in both directions"
+    ok "4 MiB TCP echo and 64 UDP datagrams traversed the tunnel"
   else
     bad "real TCP/UDP payload exchange failed"
   fi
@@ -507,7 +513,8 @@ else
   fi
 fi
 
-info "6. Reverse roles: BoringTun client against the official amneziawg-go server"
+
+info "6. Reverse roles: BoringTun client against official amneziawg-go server"
 if ! start_reverse_pair 1 1; then
   bad "reverse-role setup failed -- not an interop result"
 else
@@ -515,18 +522,16 @@ else
     ok "BoringTun completed a handshake against amneziawg-go"
   else
     bad "reverse-role handshake failed -- wire format disagreement"
-    echo "    srv: $(tail -5 "$SRV_LOG" 2>/dev/null | tr '\n' ' ')"
-    echo "    cli: $(tail -5 "$BTCLI_LOG" 2>/dev/null | tr '\n' ' ')"
   fi
   if ip netns exec "$NS_CLI" ping -c3 -w 20 -q "$SRV_TUN" >/dev/null 2>&1; then
-    ok "reverse-role ICMP tunnel traffic passed"
+    ok "reverse-role ICMP traffic passed"
   else
-    bad "reverse-role handshake succeeded but ICMP traffic failed"
+    bad "reverse-role ICMP traffic failed"
   fi
   if run_tcp_udp_traffic; then
-    ok "reverse-role TCP 4 MiB echo and 64 UDP datagrams passed"
+    ok "reverse-role 4 MiB TCP echo and 64 UDP datagrams passed"
   else
-    bad "reverse-role real TCP/UDP payload exchange failed"
+    bad "reverse-role TCP/UDP payload exchange failed"
   fi
 fi
 
@@ -648,7 +653,6 @@ run_tcp_udp_traffic() {
   local helper="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/awg-interop-traffic.py"
   local traffic_log="$WORKDIR/traffic-$RUN.log"
   ip netns exec "$NS_SRV" python3 "$helper" server "$SRV_TUN" 52100 52101 >"$traffic_log" 2>&1 &
-  sleep 0.5
   if ip netns exec "$NS_CLI" python3 "$helper" client "$SRV_TUN" 52100 52101; then
     return 0
   fi

@@ -156,13 +156,19 @@ impl SignaturePacket {
                     rng.fill_bytes(&mut output[start..]);
                 }
                 Transform::RandomChars(length) => {
-                    for _ in 0..*length {
-                        output.push(CHARS52[(rng.next_u32() as usize) % CHARS52.len()]);
+                    let start = output.len();
+                    output.resize(start + length, 0);
+                    rng.fill_bytes(&mut output[start..]);
+                    for byte in &mut output[start..] {
+                        *byte = CHARS52[(*byte as usize) % CHARS52.len()];
                     }
                 }
                 Transform::RandomDigits(length) => {
-                    for _ in 0..*length {
-                        output.push(DIGITS10[(rng.next_u32() as usize) % DIGITS10.len()]);
+                    let start = output.len();
+                    output.resize(start + length, 0);
+                    rng.fill_bytes(&mut output[start..]);
+                    for byte in &mut output[start..] {
+                        *byte = DIGITS10[(*byte as usize) % DIGITS10.len()];
                     }
                 }
                 // I1-I5 are sent with a nil source slice in the reference

@@ -214,3 +214,12 @@ Real cross-implementation tests require two independently running endpoints and 
 - Validation remains BLOCKED: GitHub Actions has no recorded runs/statuses, local Rust toolchain is unavailable, and the namespace interop harness has not executed. Do not advance to Header Protection until the full build/test gate and real bidirectional interop pass.
 
 - Follow-up review caught and removed a redundant assertion in the newly added responder regression test; the test now checks the padded initiation length before reading its message type, so an unexpected short I1 datagram fails cleanly instead of indexing out of bounds. Latest code commit: 9c9b6677e72a44f3723cfec4abb5b3d53c94120f. Still uncompiled/unrun.
+
+
+### 2026-11-02 — I-chain parser edge-case parity review
+
+- Re-opened the pinned upstream implementations for all eight I-chain transforms and the chain parser. Confirmed the Rust parser follows the reference's tag extraction model: it scans successive angle-bracket groups, uses the first whitespace-delimited argument, ignores text outside tags, and accumulates errors for malformed/unknown tags. The t, d, and ds builders intentionally ignore their optional value just as the Go builders do.
+- Confirmed <b ...> handling matches the upstream lowercase 0x prefix removal and hex decoding. Timestamp encoding uses the same four-byte big-endian Unix-seconds truncation. Random-character and digit alphabets match the reference; modulo mapping is the same.
+- Reviewed the intentional safety divergence for length-bearing tags: Rust rejects negative lengths and bounds each and total packet length to the maximum IPv4 UDP payload. The Go constructors use signed strconv.Atoi without equivalent bounds; negative lengths can later panic during slicing/encoding. Accepting those values would not provide a functioning interoperable packet, so the Rust validation is a deliberate hardening rather than a wire-format deviation.
+- Confirmed the dz big-endian source-length field is all zero for I1-I5 because upstream calls each I-chain with a nil source slice. The same nil-source call means d emits zero bytes and ds emits an empty raw-base64 string.
+- No additional wire-format mismatch was found in this pass. No code change was justified. Remaining unverified items include compilation, parser/UAPI runtime tests, and actual cross-implementation packet capture; this static review does not close the I-packet stage.

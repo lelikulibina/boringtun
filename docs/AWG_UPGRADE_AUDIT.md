@@ -249,3 +249,9 @@ Real cross-implementation tests require two independently running endpoints and 
 - A push to the implementation branch did not create a GitHub Actions run. Direct repository Actions runs query returned total_count=0; combined status for the workflow commit returned no statuses. The connector exposes only GET for workflow/repository resources and has no workflow-dispatch or Actions-settings write operation. Therefore this session cannot enable Actions or dispatch a run. The owner must enable GitHub Actions in repository Settings → Actions → General (if disabled) or grant a connection with Actions write permission; after that, push/dispatch can be retried.
 - The PR remains open and draft, base `awg-3.1-core`, head `5f886ea31fd89f42807ded1665e628459c846741`; no merge performed. No tests are reported as passed. Rust build, fmt, clippy, unit tests and live interop remain unverified.
 - Static inspection confirms the newly added lifecycle tests exercise pending signature queue reconfiguration and forced retry. They remain unexecuted. The harness remains one direction (amneziawg-go client → BoringTun server) and ICMP only; reverse role and TCP/UDP are still TODO.
+
+
+### 2026-11-02 — повторная проверка GitHub Actions
+
+- Повторно проверен endpoint `/actions/runs?per_page=20`: GitHub вернул `total_count=0`, список запусков пуст. В PR #3 head остаётся `88dfb38abf39e710d99708f802238b28be2ffd2b`; PR открыт, draft, не объединён.
+- Проверка состояния ветки подтверждает, что последний commit не изменился после предыдущей попытки. Следующий шаг — создать отдельный документационный commit в этой рабочей ветке, чтобы повторно проверить push-trigger. Это не заменяет ручной запуск и не является результатом тестов.

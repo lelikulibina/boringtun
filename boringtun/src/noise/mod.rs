@@ -1471,10 +1471,10 @@ mod tests {
         let mut dst = vec![0u8; 2048];
 
         let i1 = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
-        assert_eq!(i1, [0x49, 0x31]);
+        assert_eq!(i1, vec![0x49, 0x31]);
 
         let i3 = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
-        assert_eq!(i3, [0x49, 0x33]);
+        assert_eq!(i3, vec![0x49, 0x33]);
 
         let junk = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
         assert_eq!(junk.len(), 12);
@@ -1501,7 +1501,7 @@ mod tests {
 
         let mut large = [0u8; 2048];
         let packet = unwrap_network_packet(client.format_handshake_initiation(&mut large, false));
-        assert_eq!(packet, [1, 2, 3, 4]);
+        assert_eq!(packet, vec![1, 2, 3, 4]);
     }
 
     #[test]

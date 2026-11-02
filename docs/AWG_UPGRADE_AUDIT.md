@@ -118,13 +118,20 @@ Real cross-implementation tests require two independently running endpoints and 
 - No AWG 3.1 protocol implementation is included in this branch; it prepares audit and CI infrastructure. The interop harness extension was deliberately reverted before it could contaminate the test baseline.
 - Next: obtain a green baseline CI/interoperability run; complete the per-feature source-to-source audit; then implement the first AWG 3.1 protocol feature in its own branch with unit tests and cross-implementation checks.
 
-### 2026-11-02 — correction and I-packet implementation stage
+### 2026-11-02 — correction of interop harness status
 
-- Reverted an attempted modification of `scripts/awg-go-interop.sh` after inspection exposed a malformed function/heredoc splice and duplicated trailing shell text. The original known-good script from `awg-2.0-extensions` is restored on `awg-3.1-core`; the unintegrated Python traffic helper was deleted. This avoids presenting an unvalidated harness as usable.
-- The CI job remains configured to run the original real namespace-based interop test (official client to BoringTun server, ICMP). It does not yet test reverse roles or TCP/UDP.
+- Reverted an attempted modification of `scripts/awg-go-interop.sh` after inspection exposed malformed shell syntax and duplicated trailing shell text. The original script from `awg-2.0-extensions` is restored; the unintegrated Python traffic helper was deleted.
+- The CI job tests only the original official-client-to-BoringTun-server path and ICMP. Reverse-role and TCP/UDP checks remain outstanding.
+- No protocol implementation changes are included in this branch.
+- CI has not returned workflow runs or status checks for this branch. Do not treat build or interop as passed until real results appear.
+
+
+### 2026-11-02 — I-packet implementation stage
+
 - Created separate stage branch `awg-i-packets` from `awg-3.1-core`.
 - Implemented a bounded parser and encoder for all eight official I-packet transforms: `b`, `t`, `r`, `rc`, `rd`, `d`, `ds`, and `dz`.
-- Connected I1-I5 to UAPI set/get. I-packet values are now parsed and validated instead of silently ignored; an empty value clears a slot.
+- Connected I1-I5 to UAPI set/get. I-packet values are parsed and validated instead of silently ignored; an empty value clears a slot.
+- Added a public `AmneziaConfig::with_signature_packet` builder for embedders that configure the library without UAPI.
 - Added ordered pre-handshake emission: configured I1..I5 datagrams, then existing imitation datagrams/Jc junk, then Noise initiation. Too-small output buffers do not consume a queued signature packet.
 - Added unit tests for all transform tags, output order/alphabet/bounds, UAPI merge/clear/rejection, pre-handshake order, and retry-safe buffer handling.
 - Draft PR #2 opened against the preceding stage branch `awg-3.1-core`: https://github.com/lelikulibina/boringtun/pull/2. Do not merge until CI and real cross-implementation tests pass.

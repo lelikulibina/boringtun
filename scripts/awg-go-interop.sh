@@ -36,6 +36,8 @@ set -uo pipefail
 
 BT=${1:?path to boringtun-cli}
 GO=${2:?path to amneziawg-go}
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+readonly SCRIPT_DIR
 
 PORT=51820
 SRV_TUN=10.77.0.1; CLI_TUN=10.77.0.2
@@ -106,6 +108,7 @@ readonly RUN NS_SRV NS_CLI IF_SRV IF_CLI VETH_SRV VETH_CLI
 SRV_LOG="$WORKDIR/srv.log"
 CLI_LOG="$WORKDIR/cli.log"
 BTCLI_LOG="$WORKDIR/btcli.log"
+TRAFFIC_LOG="$WORKDIR/traffic.log"
 SRV_SET="$WORKDIR/srv-set.txt"
 CLI_SET="$WORKDIR/cli-set.txt"
 
@@ -390,12 +393,231 @@ EOF
 handshaked() { # -> 0 if the server recorded a handshake
   local hs
   for _ in $(seq 1 24); do
-    hs=$(uapi "$NS_SRV" "$IF_SRV" <<< $'get=1\n\n' | grep '^last_handshake_time_sec=' | head -1 | cut -d= -f2)
+    hs=$(uapi "$NS_SRV" "$IF_SRV" <<< 
+echo "boringtun : $BT"
+echo "peer      : $GO ($("$GO" --version 2>/dev/null | head -1 || echo 'amneziawg-go'))"
+echo
+
+info "1. An independent AmneziaWG implementation handshakes with our server"
+if ! start_pair 1 1; then
+  bad "setup failed -- not an interop result"
+else
+  if handshaked; then
+    ok "amneziawg-go completed a handshake against boringtun"
+  else
+    bad "no handshake -- wire format disagreement"
+    echo "    srv: $(tail -3 "$SRV_LOG" 2>/dev/null | tr '\n' ' ')"
+    echo "    cli: $(tail -3 "$CLI_LOG" 2>/dev/null | tr '\n' ' ')"
+  fi
+
+  info "2. and passes bidirectional traffic through the tunnel"
+  if ip netns exec "$NS_CLI" ping -c3 -w 20 -q "$SRV_TUN" >/dev/null 2>&1; then
+    ok "ping through the tunnel, both directions"
+  else
+    bad "handshake but no data -- the transport path disagrees"
+  fi
+
+  info "2a. TCP and UDP payloads traverse the tunnel in both directions"
+  if check_tcp_udp_traffic; then
+    ok "256 KiB TCP stream and 1200-byte UDP datagram echoed byte-for-byte"
+  else
+    bad "TCP/UDP tunnel payload verification failed"
+    echo "    traffic: $(tail -5 "$TRAFFIC_LOG" 2>/dev/null | tr '\n' ' ')"
+  fi
+fi
+
+info "3. NEGATIVE CONTROL: a vanilla server must NOT serve an AmneziaWG client"
+# Without this, checks 1 and 2 would pass even if both ends silently spoke
+# plain WireGuard, which would prove nothing about the obfuscation.
+if ! start_pair 0 1; then
+  bad "vanilla setup failed"
+else
+  if handshaked; then
+    bad "an obfuscated client reached a VANILLA server -- checks 1-2 prove nothing"
+  else
+    ok "vanilla server correctly cannot serve an obfuscated client"
+  fi
+fi
+
+info "4. The probe responder does not break interop"
+# NOT an ordering test, though an earlier version of this script claimed it was.
+#
+# The ordering rule matters because a datagram can be *simultaneously* a valid
+# AmneziaWG initiation and a valid DNS query, so a server that classified probes
+# first would answer its own peers. But that collision needs a client whose S1
+# filler is DNS-shaped, and that shaping is this fork's own extension:
+# amneziawg-go fills its prefix with `rand.Read` (device/send.go), so its
+# initiations are random bytes and `detect` returns None for them.
+#
+# Measured, not assumed: with `classify` mutated to ask "is this a probe?"
+# first, this check still passed. A third-party client therefore cannot test the
+# ordering at all -- it can only show that turning the responder on does not
+# break a peer that does not collide with it, which is what it now claims.
+if ! start_pair 1 1 --imitate-protocol dns; then
+  bad "setup failed with --imitate-protocol dns"
+else
+  if handshaked && ip netns exec "$NS_CLI" ping -c3 -w 20 -q "$SRV_TUN" >/dev/null 2>&1; then
+    ok "amneziawg-go still handshakes and passes traffic while the port answers DNS probes"
+  else
+    bad "enabling the probe responder broke interop with a third-party client"
+    echo "    srv: $(tail -5 "$SRV_LOG" 2>/dev/null | tr '\n' ' ')"
+  fi
+fi
+
+info "5. The ordering guarantee, with a client that actually collides"
+# The client here is boringtun, not amneziawg-go, because only our own filler
+# produces an S1 prefix that is a well-formed DNS query -- which is the whole
+# premise of the rule. Both ends being ours is a real weakness of this check and
+# the reason it is numbered separately rather than folded into 4; the
+# deterministic version is the unit test
+# `a_conforming_initiation_is_tunnel_traffic_even_though_it_is_a_valid_dns_query`.
+# What this adds is a real socket and a real ingress path.
+#
+# Verified load-bearing: reordering `classify` fails this check.
+if ! start_bt_pair --imitate-protocol dns; then
+  bad "boringtun client setup failed -- not an ordering result"
+else
+  if handshaked; then
+    ok "a DNS-shaped initiation is treated as tunnel traffic, not answered as a probe"
+  else
+    bad "a client whose S1 junk is a valid DNS query did not handshake -- classification order"
+    echo "    srv: $(tail -5 "$SRV_LOG" 2>/dev/null | tr '\n' ' ')"
+  fi
+fi
+
+echo
+if [ "$FAIL" -eq 0 ]; then
+  printf '\033[32mSUMMARY: all %d checks passed\033[0m\n' "$PASS"; exit 0
+else
+  printf '\033[31mSUMMARY: %d passed, %d FAILED\033[0m\n' "$PASS" "$FAIL"; exit 1
+fi
+get=1\n\n' | grep '^last_handshake_time_sec=' | head -1 | cut -d= -f2)
     case "${hs:-}" in ""|*[!0-9]*) hs=0 ;; esac
     [ "$hs" -gt 0 ] && return 0
     sleep 0.5
   done
   return 1
+}
+
+# Exercise real transport payloads after a successful handshake. The TCP
+# transfer is deliberately larger than a single tunnel datagram; UDP is kept
+# below the configured 1420-byte tunnel MTU after S4 and WireGuard overhead.
+check_tcp_udp_traffic() {
+  local pid ready=0 result=0
+  : >"$TRAFFIC_LOG"
+  ip netns exec "$NS_SRV" python3 "$SCRIPT_DIR/awg-traffic-check.py" server >"$TRAFFIC_LOG" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 50); do
+    if grep -q '^READY
+echo "boringtun : $BT"
+echo "peer      : $GO ($("$GO" --version 2>/dev/null | head -1 || echo 'amneziawg-go'))"
+echo
+
+info "1. An independent AmneziaWG implementation handshakes with our server"
+if ! start_pair 1 1; then
+  bad "setup failed -- not an interop result"
+else
+  if handshaked; then
+    ok "amneziawg-go completed a handshake against boringtun"
+  else
+    bad "no handshake -- wire format disagreement"
+    echo "    srv: $(tail -3 "$SRV_LOG" 2>/dev/null | tr '\n' ' ')"
+    echo "    cli: $(tail -3 "$CLI_LOG" 2>/dev/null | tr '\n' ' ')"
+  fi
+
+  info "2. and passes bidirectional traffic through the tunnel"
+  if ip netns exec "$NS_CLI" ping -c3 -w 20 -q "$SRV_TUN" >/dev/null 2>&1; then
+    ok "ping through the tunnel, both directions"
+  else
+    bad "handshake but no data -- the transport path disagrees"
+  fi
+fi
+
+info "3. NEGATIVE CONTROL: a vanilla server must NOT serve an AmneziaWG client"
+# Without this, checks 1 and 2 would pass even if both ends silently spoke
+# plain WireGuard, which would prove nothing about the obfuscation.
+if ! start_pair 0 1; then
+  bad "vanilla setup failed"
+else
+  if handshaked; then
+    bad "an obfuscated client reached a VANILLA server -- checks 1-2 prove nothing"
+  else
+    ok "vanilla server correctly cannot serve an obfuscated client"
+  fi
+fi
+
+info "4. The probe responder does not break interop"
+# NOT an ordering test, though an earlier version of this script claimed it was.
+#
+# The ordering rule matters because a datagram can be *simultaneously* a valid
+# AmneziaWG initiation and a valid DNS query, so a server that classified probes
+# first would answer its own peers. But that collision needs a client whose S1
+# filler is DNS-shaped, and that shaping is this fork's own extension:
+# amneziawg-go fills its prefix with `rand.Read` (device/send.go), so its
+# initiations are random bytes and `detect` returns None for them.
+#
+# Measured, not assumed: with `classify` mutated to ask "is this a probe?"
+# first, this check still passed. A third-party client therefore cannot test the
+# ordering at all -- it can only show that turning the responder on does not
+# break a peer that does not collide with it, which is what it now claims.
+if ! start_pair 1 1 --imitate-protocol dns; then
+  bad "setup failed with --imitate-protocol dns"
+else
+  if handshaked && ip netns exec "$NS_CLI" ping -c3 -w 20 -q "$SRV_TUN" >/dev/null 2>&1; then
+    ok "amneziawg-go still handshakes and passes traffic while the port answers DNS probes"
+  else
+    bad "enabling the probe responder broke interop with a third-party client"
+    echo "    srv: $(tail -5 "$SRV_LOG" 2>/dev/null | tr '\n' ' ')"
+  fi
+fi
+
+info "5. The ordering guarantee, with a client that actually collides"
+# The client here is boringtun, not amneziawg-go, because only our own filler
+# produces an S1 prefix that is a well-formed DNS query -- which is the whole
+# premise of the rule. Both ends being ours is a real weakness of this check and
+# the reason it is numbered separately rather than folded into 4; the
+# deterministic version is the unit test
+# `a_conforming_initiation_is_tunnel_traffic_even_though_it_is_a_valid_dns_query`.
+# What this adds is a real socket and a real ingress path.
+#
+# Verified load-bearing: reordering `classify` fails this check.
+if ! start_bt_pair --imitate-protocol dns; then
+  bad "boringtun client setup failed -- not an ordering result"
+else
+  if handshaked; then
+    ok "a DNS-shaped initiation is treated as tunnel traffic, not answered as a probe"
+  else
+    bad "a client whose S1 junk is a valid DNS query did not handshake -- classification order"
+    echo "    srv: $(tail -5 "$SRV_LOG" 2>/dev/null | tr '\n' ' ')"
+  fi
+fi
+
+echo
+if [ "$FAIL" -eq 0 ]; then
+  printf '\033[32mSUMMARY: all %d checks passed\033[0m\n' "$PASS"; exit 0
+else
+  printf '\033[31mSUMMARY: %d passed, %d FAILED\033[0m\n' "$PASS" "$FAIL"; exit 1
+fi
+ "$TRAFFIC_LOG"; then
+      ready=1
+      break
+    fi
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+
+  if [ "$ready" -eq 1 ]; then
+    ip netns exec "$NS_CLI" python3 "$SCRIPT_DIR/awg-traffic-check.py" client
+    result=$?
+  else
+    echo "TCP/UDP echo server did not become ready"
+    cat "$TRAFFIC_LOG"
+    result=1
+  fi
+
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  return "$result"
 }
 
 echo "boringtun : $BT"

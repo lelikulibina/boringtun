@@ -124,3 +124,16 @@ Real cross-implementation tests require two independently running endpoints and 
 - The CI job tests only the original official-client-to-BoringTun-server path and ICMP. Reverse-role and TCP/UDP checks remain outstanding.
 - No protocol implementation changes are included in this branch.
 - CI has not returned workflow runs or status checks for this branch. Do not treat build or interop as passed until real results appear.
+
+
+### 2026-11-02 — I-packet implementation stage
+
+- Created separate stage branch `awg-i-packets` from `awg-3.1-core`.
+- Implemented a bounded parser and encoder for all eight official I-packet transforms: `b`, `t`, `r`, `rc`, `rd`, `d`, `ds`, and `dz`.
+- Connected I1-I5 to UAPI set/get. I-packet values are parsed and validated instead of silently ignored; an empty value clears a slot.
+- Added a public `AmneziaConfig::with_signature_packet` builder for embedders that configure the library without UAPI.
+- Added ordered pre-handshake emission: configured I1..I5 datagrams, then existing imitation datagrams/Jc junk, then Noise initiation. Too-small output buffers do not consume a queued signature packet.
+- Added unit tests for all transform tags, output order/alphabet/bounds, UAPI merge/clear/rejection, pre-handshake order, and retry-safe buffer handling.
+- Draft PR #2 opened against the preceding stage branch `awg-3.1-core`: https://github.com/lelikulibina/boringtun/pull/2. Do not merge until CI and real cross-implementation tests pass.
+- CI results are still absent from the Actions API for the current PR head. Build, formatting, clippy and unit tests therefore remain **unverified**, not passed.
+- Next: fix any CI/compiler findings; add independent interop tests for both endpoint roles and real TCP/UDP payload transfer; run against the pinned official release. Then proceed to header protection, content padding, timing, trailers and cookie behavior in separate stage branches.

@@ -55,6 +55,43 @@ Inspected on `awg-2.0-extensions`:
 
 This inventory is preliminary. In particular, every receive/send packet offset, UAPI transaction boundary, timer transition and MTU calculation must be reviewed before implementing changes.
 
+
+## Detailed AWG 3.1 source mapping — next protocol stages
+
+The following behavior was checked directly against the pinned reference tag `v3.1.20260828`:
+
+### Header protection
+
+- Reference state: `device/device.go` stores a 32-byte `HeaderCipherKey` behind an RW lock; `device/noise-protocol.go` implements `HeaderProtectionCipher(salt)` as ChaCha20 with that key and the supplied 12-byte nonce/salt. A zero key disables the transform.
+- Send ordering: `device/send.go` first creates the S1-S4 random prefix. Its first 12 bytes are passed as the ChaCha20 nonce. For handshake-initiation, response and cookie packets, MACs are added before the packet bytes are XORed with the ChaCha20 stream. For transport, the encrypted packet content is already produced and only the 16-byte transport header is XORed.
+- Receive ordering: `device/receive.go` derives the same stream from the first 12 bytes, XORs a zero 4-byte buffer to recover the masked type, classifies using the recovered type, unmasks the first type field, then continues the stream over the remaining fixed-size handshake bytes or transport header.
+- Configuration rule: `device/uapi.go` rejects a nonzero header-protection key unless **all four** S1-S4 prefix sizes are at least 12 bytes. The Rust implementation must enforce this atomically with the key and all four S values; partial updates must not leave an invalid live configuration.
+- Current Rust gap: there is no equivalent header-protection key, ChaCha20 stream transform, or inverse receive transform in the inspected BoringTun packet paths.
+
+### Content padding and random trailers
+
+- Reference content padding: `device/send.go:randomPaddingAddition` picks a value from `content_padding_addition`, then caps it to the peer's learned `udpWindow - packetSize`. If the range is unset, it returns a sentinel so the sender may try random trailers or ordinary MTU alignment. A configured addition takes precedence over random trailers.
+- Padding bytes are zero-filled **before AEAD encryption**. The receiver's IP packet length validation truncates the decrypted IP packet to the length in its IPv4/IPv6 header; no separate content-padding length field is negotiated.
+- Random trailers are separate from encrypted content padding. Handshake initiation, response and cookie replies append random bytes after their fixed WireGuard message. Transport may append random bytes after the encrypted payload when content-padding addition is unset. The peer/device UDP-window bound is used to avoid exceeding the observed or default UDP payload size.
+- Receive classification: with `random_trailers=1`, fixed-size initiation/response/cookie messages may be longer than their base size; the receiver classifies the message at the S-prefix offset and truncates the handshake packet back to its fixed protocol size. Transport is variable-length already and accepts a datagram at least as large as its minimum.
+- Current Rust gap: the inspected BoringTun code has S-prefix padding and MTU alignment but no configurable content-padding range or random-trailer acceptance/generation.
+
+### Timing controls
+
+- `rekey_after_time` overrides the initiator key-refresh age; `rekey_timeout` participates in retransmit/new-handshake timing; `reject_after_time` determines key-chain expiry; `keepalive_timeout` adjusts new-handshake timing and the receiving-side rekey margin; `max_handshake_attempts` controls how many retransmissions occur before staged packets are flushed.
+- The reference uses `UintRange.PickOne()` for random selection where the call site needs a single duration, but uses the lower/upper bound deliberately for conservative timeout calculations (e.g. keepalive/rekey timeout margins and key expiry).
+- Current Rust gap: `noise/timers.rs` uses fixed WireGuard timing constants and does not expose these ranges through UAPI.
+
+### Cookie control
+
+- In `device/receive.go`, `disable_cookies` bypasses the entire under-load branch, including MAC2 cookie challenge and the associated source rate limiter. This is not merely a cosmetic switch: it trades the cookie-based load-shedding path for reduced per-packet work and greater exposure to unauthenticated handshake processing.
+- Current Rust gap: there is no equivalent UAPI flag or matching under-load behavior switch.
+
+### I1-I5 real interop configuration
+
+- The namespace interop script now includes I1-I5 templates in its shared AWG UAPI block: fixed bytes, timestamp, random bytes, random letters and random digits. This exercises official-client signature emission into the BoringTun server path when the namespace test runs.
+- This is a test configuration change only; no successful run has been observed yet. The reverse role (BoringTun sender to official server) and real TCP/UDP payload transfer are still not verified.
+
 ## Mandatory protocol audit matrix
 
 For every official feature, record: source file and symbol in the pinned Go reference; wire format and state transitions; matching Rust code (or absence); config/UAPI exposure; compatibility constraints; unit tests; cross-implementation test result.

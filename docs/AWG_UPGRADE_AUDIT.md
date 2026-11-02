@@ -106,3 +106,15 @@ Real cross-implementation tests require two independently running endpoints and 
 - Confirmed official I-packet parser supports eight transform tags, beyond the simplified examples in the README.
 - No protocol implementation changes have been made yet. The audit branch contains documentation only.
 - Next: complete detailed source-to-source mapping and establish baseline build/test results; then create a separate implementation branch from the reviewed audit snapshot.
+
+### 2026-11-02 — interoperability harness stage
+
+- Created implementation/test-infrastructure branch `awg-3.1-core` from the isolated audit branch; the original source branches remain untouched.
+- Expanded the GitHub Actions branch filters to cover isolated `awg-*` work branches.
+- Added `scripts/awg-interop-traffic.py`: a separate process in the remote network namespace echoes 4 MiB over TCP and 64 UDP datagrams of 1200 bytes; the client validates every echoed byte/datagram.
+- Extended `scripts/awg-go-interop.sh` to test both endpoint roles: (a) amneziawg-go client against BoringTun server, and (b) BoringTun client against amneziawg-go server. Both roles now include ICMP plus the TCP/UDP echo probe.
+- Added an Ubuntu CI job that builds BoringTun, builds the exact official `v3.1.20260828` tag, and runs the real namespace-based interop harness.
+- Opened draft PR #1 against `awg-2.0-extensions` only as a review/CI checkpoint: https://github.com/lelikulibina/boringtun/pull/1. It is explicitly marked draft and must not be merged.
+- At this checkpoint, GitHub's status endpoint has not returned any checks/workflow runs. Therefore the new harness and CI job are **not yet verified as executed**. Do not mark this stage passed until the workflow result is observed and failures are fixed.
+- No AWG 3.1 protocol implementation has been committed yet; this branch currently prepares audit, CI, and real-traffic verification infrastructure.
+- Next: obtain a green baseline CI/interoperability run; complete the per-feature source-to-source audit; then implement the first AWG 3.1 protocol feature in its own branch with unit tests and cross-implementation checks.

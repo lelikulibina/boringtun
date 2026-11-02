@@ -306,3 +306,11 @@ Pinned references: `device/send.go`, `device/receive.go`, `device/noise-types.go
 - Rust compiler validation remains unavailable: neither `cargo` nor `rustc` is installed, and DNS resolution for `static.rust-lang.org` fails in this execution environment, so the toolchain cannot be installed here.
 - Latest PR #5 head: `c0fba7acf852cfb1a8be7a8005de10dc38f00f4b`. GitHub Actions runs `41440438173`, `41440436450`, and `41440429686` ended in `startup_failure`; the workflow run API reports zero jobs. This is an infrastructure startup failure, not a failing test.
 - PR #5 remains draft and unmerged. PR #3 and PR #4 remain unmerged. No source branch or final release branch was merged.
+
+
+### 2026-11-02 — post-permission-change Actions retest request
+
+- Repository metadata confirms the connected GitHub identity has repository admin permission. This does not expose or prove the repository's Actions enablement, workflow permission, or runner configuration.
+- The latest observed runs for PR #5 head `65eb0dd641b040f002466de07a58af4c0572e27c` (`41440714635`, `41440713353`, and `41440707922`) all concluded `startup_failure`; the run-jobs endpoint returned an empty job list.
+- A documentation-only update is being pushed to this branch to request a fresh push/pull-request workflow run after the owner's settings change. This is a trigger probe, not a code or test result.
+- Do not treat the Actions configuration as verified until a new run creates at least one job and its logs show runner startup. No Rust implementation or source behavior is changed by this entry.

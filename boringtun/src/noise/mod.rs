@@ -1458,6 +1458,53 @@ mod tests {
     }
 
     #[test]
+    fn i_packets_are_emitted_in_order_before_junk_and_handshake() {
+        let mut amnezia = AmneziaConfig::new(0, 0, 0, 0)
+            .with_pre_handshake_junk(1, 12, 12, 0);
+        amnezia
+            .set_signature_packet(0, "<b 0x4931>")
+            .expect("valid I1");
+        amnezia
+            .set_signature_packet(2, "<b 0x4933>")
+            .expect("valid I3");
+        let (mut client, _) = create_two_tuns_with_amnezia(amnezia);
+        let mut dst = vec![0u8; 2048];
+
+        let i1 = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+        assert_eq!(i1, [0x49, 0x31]);
+
+        let i3 = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+        assert_eq!(i3, [0x49, 0x33]);
+
+        let junk = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+        assert_eq!(junk.len(), 12);
+
+        let initiation = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+        assert_eq!(
+            u32::from_le_bytes(initiation[..4].try_into().unwrap()),
+            HANDSHAKE_INIT
+        );
+    }
+
+    #[test]
+    fn too_small_buffer_does_not_consume_an_i_packet() {
+        let mut amnezia = AmneziaConfig::default();
+        amnezia
+            .set_signature_packet(0, "<b 0x01020304>")
+            .expect("valid I1");
+        let (mut client, _) = create_two_tuns_with_amnezia(amnezia);
+        let mut small = [0u8; 2];
+        assert!(matches!(
+            client.format_handshake_initiation(&mut small, false),
+            TunnResult::Err(WireGuardError::DestinationBufferTooSmall)
+        ));
+
+        let mut large = [0u8; 2048];
+        let packet = unwrap_network_packet(client.format_handshake_initiation(&mut large, false));
+        assert_eq!(packet, [1, 2, 3, 4]);
+    }
+
+    #[test]
     fn amnezia_pre_handshake_junk_precedes_handshake_initiation() {
         let amnezia = AmneziaConfig::new(5, 0, 0, 0).with_pre_handshake_junk(2, 10, 20, 0);
         let (mut my_tun, _their_tun) = create_two_tuns_with_amnezia(amnezia);

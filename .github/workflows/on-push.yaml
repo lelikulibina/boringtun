@@ -7,6 +7,7 @@ name: PR Status Checks
 # `pull_request` entry filters on the *base* branch, so this covers the
 # short-lived branches that merge into it too.
 on:
+  workflow_dispatch:
   push:
     branches: [ "master", "awg-2.0-extensions", "awg-*" ]
   pull_request:

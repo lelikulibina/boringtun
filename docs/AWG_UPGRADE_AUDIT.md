@@ -238,3 +238,6 @@ Real cross-implementation tests require two independently running endpoints and 
 - The test exercises the public tunnel reconfiguration path (set_obfuscation) and the actual pre-handshake emission path; it is not a mock of the queue.
 - Commit: 0d231ead9c029c4c8e0ff432f3ed63668f2151df.
 - Static inspection only: Rust formatting, compilation, unit tests, CI and live interop remain blocked by the unavailable Rust toolchain and absent GitHub Actions runs. The new test must not be counted as passed until executed.
+
+
+- Added a second queue-lifecycle regression: a forced handshake retry between I1 and I2 must drain the already-generated sequence (I2 next), must not regenerate/replay I1, and must then emit the Noise initiation. Commit: a8a4f50ae074202058a7c033965788ce03c94993. Like the other new test, this is committed but not executed.

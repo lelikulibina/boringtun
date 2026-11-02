@@ -77,21 +77,21 @@ impl SignaturePacket {
                     }
                 }
                 "t" => Ok(Transform::Timestamp),
-                "r" | "rc" | "rd" | "dz" => {
-                    let length = value
-                        .parse::<usize>()
-                        .map_err(|e| format!("invalid <{name}> length: {e}"))?;
-                    if length > MAX_SIGNATURE_PACKET_SIZE {
-                        Err(format!("<{name}> length exceeds {MAX_SIGNATURE_PACKET_SIZE}"))
-                    } else {
-                        Ok(match name {
-                            "r" => Transform::Random(length),
-                            "rc" => Transform::RandomChars(length),
-                            "rd" => Transform::RandomDigits(length),
-                            _ => Transform::DataSize(length),
-                        })
-                    }
-                }
+                "r" | "rc" | "rd" | "dz" => value
+                    .parse::<usize>()
+                    .map_err(|e| format!("invalid <{name}> length: {e}"))
+                    .and_then(|length| {
+                        if length > MAX_SIGNATURE_PACKET_SIZE {
+                            Err(format!("<{name}> length exceeds {MAX_SIGNATURE_PACKET_SIZE}"))
+                        } else {
+                            Ok(match name {
+                                "r" => Transform::Random(length),
+                                "rc" => Transform::RandomChars(length),
+                                "rd" => Transform::RandomDigits(length),
+                                _ => Transform::DataSize(length),
+                            })
+                        }
+                    }),
                 "d" => Ok(Transform::Data),
                 "ds" => Ok(Transform::DataString),
                 _ => Err(format!("unknown tag <{name}>")),

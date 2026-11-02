@@ -230,3 +230,11 @@ Real cross-implementation tests require two independently running endpoints and 
 - A closer review of `SignaturePacket::parse` found that the numeric-length branch used `?` inside the tag match. That returned from the whole parser on the first malformed length, despite the surrounding implementation and upstream Go parser accumulating independent tag errors.
 - Changed the length branch to keep the parse failure as a per-tag `Result`, allowing the parser to continue and report subsequent unknown/malformed tags in the same response. Wire encoding and accepted valid templates are unchanged.
 - Added a regression test with `<r nope><unknown 1>` asserting that both errors are reported. The change is committed but remains uncompiled and unexecuted because no Rust toolchain/CI run is available.
+
+
+### 2026-11-02 — I-chain pending-queue reconfiguration regression
+
+- Added a regression test that emits the first packet from an old I1/I2 sequence, changes the tunnel's obfuscation configuration while I2 is pending, and asserts the next emitted datagram is the new I1 template. This guards against stale signature datagrams escaping after a live UAPI/config update.
+- The test exercises the public tunnel reconfiguration path (set_obfuscation) and the actual pre-handshake emission path; it is not a mock of the queue.
+- Commit: 0d231ead9c029c4c8e0ff432f3ed63668f2151df.
+- Static inspection only: Rust formatting, compilation, unit tests, CI and live interop remain blocked by the unavailable Rust toolchain and absent GitHub Actions runs. The new test must not be counted as passed until executed.

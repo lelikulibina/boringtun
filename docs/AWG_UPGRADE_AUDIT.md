@@ -193,3 +193,13 @@ Real cross-implementation tests require two independently running endpoints and 
 - Expanded the ordered-emission unit test to configure all five slots and assert I1, I2, I3, I4, I5 are emitted in order before Jc and the Noise initiation. The test is added but has not run because CI remains unavailable.
 
 - Corrected the workflow's interop job comments/name: they had claimed TCP/UDP payload coverage that the current shell harness does not implement. The job is now explicitly described as handshake + ICMP only; reverse-role and TCP/UDP remain open tasks.
+
+### 2026-11-02 — I1-I5 static lifecycle and UAPI review
+
+- Re-read the full I1-I5 implementation path: AwgParams transaction accumulation/merge, api_set, Device::set_obfuscation, Tunn::set_obfuscation, format_handshake_initiation, and advance_amnezia_junk.
+- Confirmed statically that I1-I5 are queued in slot order and emitted as separate datagrams before imitation datagrams, Jc packets, and the Noise initiation. The queue is retained on a too-small output buffer and is cleared only after the initiation is successfully written.
+- Confirmed statically that a new handshake/retry rebuilds the pre-handshake queue; an already pending queue is drained rather than duplicated. Updating AWG settings propagates the new config to existing peers and clears stale pending pre-handshake state.
+- Confirmed UAPI device-level values are accumulated and validated as one transaction, partial updates preserve unspecified I slots, an explicitly empty iN= clears only that slot, and invalid templates reject the transaction before commit. Existing protocol-imitation settings are preserved by cloning and merging the current AmneziaConfig.
+- Confirmed all eight implemented transforms have the expected empty-source behavior for standalone signature datagrams: d and ds produce no bytes; dz N emits N zero bytes; timestamp is four-byte big-endian Unix seconds; random bytes/letters/digits use the expected output lengths and alphabets. This remains a source review, not a compiler or wire-level result.
+- Official project documentation describes I1-I5 as separate pre-handshake signature packets, in I1..I5 order, and recommends configuring them client-side; the current harness configures both peers but only exercises the official-client-to-BoringTun-server initiation path. See https://github.com/amnezia-vpn/amneziawg-go and https://docs.amnezia.org/documentation/instructions/amneziawg-signature/.
+- No code changes were needed from this static pass. The stage remains BLOCKED pending actual Rust build/tests and pinned-reference interop execution. Reverse-role and TCP/UDP traffic coverage remain outstanding.

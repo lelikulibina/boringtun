@@ -589,14 +589,13 @@ fn api_set(reader: &mut BufReader<&UnixStream>, d: &mut LockReadGuard<Device>) -
                             Some(range) => awg.set_header(key, range),
                             None => return EINVAL,
                         },
-                        // AWG 2.0 signature packets. A responder only has to
-                        // tolerate these; accept and ignore rather than failing
-                        // the whole transaction on a config that carries them.
+                        // AWG signature packet templates are validated and
+                        // committed with the other device-level parameters.
                         "i1" => awg.set_signature_packet(0, val),
                         "i2" => awg.set_signature_packet(1, val),
                         "i3" => awg.set_signature_packet(2, val),
                         "i4" => awg.set_signature_packet(3, val),
-                        "i5" => awg.set_signature_packet(4, val)
+                        "i5" => awg.set_signature_packet(4, val),
                         _ => return EINVAL,
                     }
                 }
@@ -761,6 +760,58 @@ mod tests {
         // And the keys the transaction did not mention keep their old values.
         assert_eq!(merged.cookie_packet_junk_size, 1, "s3 untouched");
         assert_eq!(merged.transport_packet_junk_size, 1, "s4 untouched");
+    }
+
+    #[test]
+    fn a_set_transaction_stores_and_preserves_signature_packet_templates() {
+        let current = AmneziaConfig::new(1, 1, 1, 1);
+        let mut params = AwgParams::default();
+        params.set_signature_packet(0, "<b 0xdeadbeef><r 8>");
+        params.set_signature_packet(4, "<t>");
+
+        let (_, merged) = params
+            .merged(ObfuscationRanges::default(), &current)
+            .expect("valid signature packet templates");
+
+        assert_eq!(merged.signature_packet_spec(0), Some("<b 0xdeadbeef><r 8>"));
+        assert_eq!(merged.signature_packet_spec(1), None);
+        assert_eq!(merged.signature_packet_spec(4), Some("<t>"));
+
+        let mut padding_only = AwgParams::default();
+        padding_only.set_size("s1", 120);
+        let (_, preserved) = padding_only
+            .merged(ObfuscationRanges::default(), &merged)
+            .expect("unrelated update must preserve I packets");
+        assert_eq!(
+            preserved.signature_packet_spec(0),
+            Some("<b 0xdeadbeef><r 8>")
+        );
+        assert_eq!(preserved.signature_packet_spec(4), Some("<t>"));
+    }
+
+    #[test]
+    fn invalid_signature_packet_template_rejects_the_whole_transaction() {
+        let mut params = AwgParams::default();
+        params.set_signature_packet(0, "<r -1>");
+        assert_eq!(
+            params.merged(ObfuscationRanges::default(), &AmneziaConfig::default()),
+            Err(EINVAL)
+        );
+    }
+
+    #[test]
+    fn an_empty_signature_packet_value_clears_that_slot() {
+        let mut current = AmneziaConfig::new(1, 1, 1, 1);
+        current
+            .set_signature_packet(0, "<b deadbeef>")
+            .expect("valid template");
+        let mut params = AwgParams::default();
+        params.set_signature_packet(0, "");
+
+        let (_, merged) = params
+            .merged(ObfuscationRanges::default(), &current)
+            .expect("empty template clears slot");
+        assert_eq!(merged.signature_packet_spec(0), None);
     }
 
     #[test]

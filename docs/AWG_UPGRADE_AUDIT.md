@@ -174,3 +174,11 @@ Real cross-implementation tests require two independently running endpoints and 
 - Draft PR #3 opened against the preceding stage branch `awg-3.1-core`: https://github.com/lelikulibina/boringtun/pull/3. Superseded PR #2 was closed; do not merge it.
 - CI results are still absent from the Actions API for the current PR head. Build, formatting, clippy and unit tests therefore remain **unverified**, not passed.
 - Next: fix any CI/compiler findings; add independent interop tests for both endpoint roles and real TCP/UDP payload transfer; run against the pinned official release. Then proceed to header protection, content padding, timing, trailers and cookie behavior in separate stage branches.
+
+### 2026-11-02 — validation environment checkpoint
+
+- PR #3 is open as draft, targets `awg-3.1-core`, and GitHub currently reports the branch mergeable/clean. This is only a mergeability result, not a test result.
+- The repository Actions API currently reports `total_count=0` workflow runs for the repository; the PR head has no workflow runs and no commit status checks. CI therefore has not executed or reported a result.
+- A local clone attempt failed because the execution environment cannot resolve `github.com`; `rustc` and `cargo` are not installed in that environment. No local Cargo build or test can be honestly reported.
+- The shell block used to construct the interop UAPI settings was separately checked with `bash -n`; the full namespace harness has not been run.
+- Required next action before closing the I-packet stage: make GitHub Actions actually execute (verify repository Actions settings or run the workflow in an enabled runner), fix all compiler/test findings, then run the namespace interop test with I1-I5 and confirm the actual handshake/ICMP result. Add reverse-role and TCP/UDP tests before considering the stage complete.

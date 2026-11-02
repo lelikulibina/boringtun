@@ -176,8 +176,9 @@ impl SignaturePacket {
                 Transform::Data | Transform::DataString => {}
                 Transform::DataSize(length) => {
                     // Big-endian source length, matching the reference. The
-                    // source is empty for the standalone pre-handshake packets.
-                    output.extend(std::iter::repeat(0).take(*length));
+                    // source is empty for standalone pre-handshake packets.
+                    let start = output.len();
+                    output.resize(start + length, 0);
                 }
             }
         }

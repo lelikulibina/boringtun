@@ -241,3 +241,11 @@ Real cross-implementation tests require two independently running endpoints and 
 
 
 - Added a second queue-lifecycle regression: a forced handshake retry between I1 and I2 must drain the already-generated sequence (I2 next), must not regenerate/replay I1, and must then emit the Noise initiation. Commit: a8a4f50ae074202058a7c033965788ce03c94993. Like the other new test, this is committed but not executed.
+
+
+### 2026-11-02 — GitHub Actions trigger attempt and scope correction
+
+- Updated `.github/workflows/on-push.yaml` on `awg-i-packets-rebased`: added `workflow_dispatch` and corrected the interop job description/name to state its actual coverage (handshake + ICMP only). The previous workflow comment claimed TCP/UDP coverage that the checked-in `scripts/awg-go-interop.sh` does not implement; that claim is removed. Commit: 5f886ea31fd89f42807ded1665e628459c846741.
+- A push to the implementation branch did not create a GitHub Actions run. Direct repository Actions runs query returned total_count=0; combined status for the workflow commit returned no statuses. The connector exposes only GET for workflow/repository resources and has no workflow-dispatch or Actions-settings write operation. Therefore this session cannot enable Actions or dispatch a run. The owner must enable GitHub Actions in repository Settings → Actions → General (if disabled) or grant a connection with Actions write permission; after that, push/dispatch can be retried.
+- The PR remains open and draft, base `awg-3.1-core`, head `5f886ea31fd89f42807ded1665e628459c846741`; no merge performed. No tests are reported as passed. Rust build, fmt, clippy, unit tests and live interop remain unverified.
+- Static inspection confirms the newly added lifecycle tests exercise pending signature queue reconfiguration and forced retry. They remain unexecuted. The harness remains one direction (amneziawg-go client → BoringTun server) and ICMP only; reverse role and TCP/UDP are still TODO.

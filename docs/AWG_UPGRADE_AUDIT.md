@@ -189,3 +189,5 @@ Real cross-implementation tests require two independently running endpoints and 
 - This is a static-review correction only. There is still no compiler/test output from CI or a local Rust toolchain, so the branch is **not build-verified**.
 - Added `workflow_dispatch` to the workflow on `awg-3.1-core`, so a maintainer can manually run the complete validation workflow from the Actions tab after confirming repository Actions are enabled. Push and pull-request triggers remain in place.
 - Repository-wide Actions query still reports zero runs. This cannot be resolved through the available GitHub connection because it exposes read-only repository/workflow inspection, not the repository Actions enablement settings or a workflow-dispatch write operation.
+
+- Expanded the ordered-emission unit test to configure all five slots and assert I1, I2, I3, I4, I5 are emitted in order before Jc and the Noise initiation. The test is added but has not run because CI remains unavailable.

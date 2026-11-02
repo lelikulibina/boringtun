@@ -246,6 +246,13 @@ mod tests {
     }
 
     #[test]
+    fn accumulates_independent_transform_errors_like_reference_parser() {
+        let error = SignaturePacket::parse("<r nope><unknown 1>").unwrap_err();
+        assert!(error.contains("invalid <r> length"), "{error}");
+        assert!(error.contains("unknown tag <unknown>"), "{error}");
+    }
+
+    #[test]
     fn rejects_malformed_or_unbounded_templates() {
         assert!(SignaturePacket::parse("<b abc>").is_err());
         assert!(SignaturePacket::parse("<r -1>").is_err());

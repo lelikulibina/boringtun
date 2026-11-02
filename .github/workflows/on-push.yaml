@@ -7,6 +7,7 @@ name: PR Status Checks
 # `pull_request` entry filters on the *base* branch, so this covers the
 # short-lived branches that merge into it too.
 on:
+  workflow_dispatch:
   push:
     branches: [ "master", "awg-2.0-extensions", "awg-*" ]
   pull_request:
@@ -106,8 +107,8 @@ jobs:
       - run: cargo test -- --ignored
 
   # Cross-implementation test against the exact official AWG 3.1 reference.
-  # The script creates disposable network namespaces and transfers real ICMP,
-  # TCP and UDP traffic; this is intentionally a privileged Linux-only job.
+  # The current harness verifies the handshake and ICMP only. Reverse-role,
+  # TCP and UDP payload coverage are not implemented yet.
   awg-go-interop:
     runs-on: ubuntu-latest
     steps:
@@ -131,5 +132,5 @@ jobs:
           cd /tmp/amneziawg-go
           go build -o /tmp/amneziawg-go-bin .
 
-      - name: Run real cross-implementation traffic tests
+      - name: Run cross-implementation handshake and ICMP test
         run: sudo bash scripts/awg-go-interop.sh "$GITHUB_WORKSPACE/target/release/boringtun-cli" /tmp/amneziawg-go-bin

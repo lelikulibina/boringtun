@@ -111,10 +111,22 @@ Real cross-implementation tests require two independently running endpoints and 
 
 - Created implementation/test-infrastructure branch `awg-3.1-core` from the isolated audit branch; the original source branches remain untouched.
 - Expanded the GitHub Actions branch filters to cover isolated `awg-*` work branches.
-- Added `scripts/awg-interop-traffic.py`: a separate process in the remote network namespace echoes 4 MiB over TCP and 64 UDP datagrams of 1200 bytes; the client validates every echoed byte/datagram.
-- Extended `scripts/awg-go-interop.sh` to test both endpoint roles: (a) amneziawg-go client against BoringTun server, and (b) BoringTun client against amneziawg-go server. Both roles now include ICMP plus the TCP/UDP echo probe.
-- Added an Ubuntu CI job that builds BoringTun, builds the exact official `v3.1.20260828` tag, and runs the real namespace-based interop harness.
+- The existing `scripts/awg-go-interop.sh` was restored unchanged after an attempted extension produced malformed shell syntax. It currently validates the original amneziawg-go-client to BoringTun-server path and ICMP traffic only. Reverse-role and TCP/UDP coverage remain outstanding.
+- Added an Ubuntu CI job that builds BoringTun, builds the exact official `v3.1.20260828` tag, and runs the existing namespace-based interop harness (currently one direction, ICMP).
 - Opened draft PR #1 against `awg-2.0-extensions` only as a review/CI checkpoint: https://github.com/lelikulibina/boringtun/pull/1. It is explicitly marked draft and must not be merged.
 - At this checkpoint, GitHub's status endpoint has not returned any checks/workflow runs. Therefore the new harness and CI job are **not yet verified as executed**. Do not mark this stage passed until the workflow result is observed and failures are fixed.
-- No AWG 3.1 protocol implementation has been committed yet; this branch currently prepares audit, CI, and real-traffic verification infrastructure.
+- No AWG 3.1 protocol implementation is included in this branch; it prepares audit and CI infrastructure. The interop harness extension was deliberately reverted before it could contaminate the test baseline.
 - Next: obtain a green baseline CI/interoperability run; complete the per-feature source-to-source audit; then implement the first AWG 3.1 protocol feature in its own branch with unit tests and cross-implementation checks.
+
+### 2026-11-02 — correction and I-packet implementation stage
+
+- Reverted an attempted modification of `scripts/awg-go-interop.sh` after inspection exposed a malformed function/heredoc splice and duplicated trailing shell text. The original known-good script from `awg-2.0-extensions` is restored on `awg-3.1-core`; the unintegrated Python traffic helper was deleted. This avoids presenting an unvalidated harness as usable.
+- The CI job remains configured to run the original real namespace-based interop test (official client to BoringTun server, ICMP). It does not yet test reverse roles or TCP/UDP.
+- Created separate stage branch `awg-i-packets` from `awg-3.1-core`.
+- Implemented a bounded parser and encoder for all eight official I-packet transforms: `b`, `t`, `r`, `rc`, `rd`, `d`, `ds`, and `dz`.
+- Connected I1-I5 to UAPI set/get. I-packet values are now parsed and validated instead of silently ignored; an empty value clears a slot.
+- Added ordered pre-handshake emission: configured I1..I5 datagrams, then existing imitation datagrams/Jc junk, then Noise initiation. Too-small output buffers do not consume a queued signature packet.
+- Added unit tests for all transform tags, output order/alphabet/bounds, UAPI merge/clear/rejection, pre-handshake order, and retry-safe buffer handling.
+- Draft PR #2 opened against the preceding stage branch `awg-3.1-core`: https://github.com/lelikulibina/boringtun/pull/2. Do not merge until CI and real cross-implementation tests pass.
+- CI results are still absent from the Actions API for the current PR head. Build, formatting, clippy and unit tests therefore remain **unverified**, not passed.
+- Next: fix any CI/compiler findings; add independent interop tests for both endpoint roles and real TCP/UDP payload transfer; run against the pinned official release. Then proceed to header protection, content padding, timing, trailers and cookie behavior in separate stage branches.

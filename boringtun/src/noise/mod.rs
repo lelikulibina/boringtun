@@ -1644,15 +1644,25 @@ mod tests {
         // Same configuration as the test above, but adapted for a responder:
         // the initiation must come out immediately, with no junk datagrams
         // ahead of it, while S1 padding is still applied.
-        let amnezia = AmneziaConfig::new(5, 0, 0, 0)
+        let mut amnezia = AmneziaConfig::new(5, 0, 0, 0)
             .with_pre_handshake_junk(2, 10, 20, 0)
-            .with_protocol_imitation(crate::noise::amnezia::AmneziaImitationProtocol::Quic, None)
-            .as_responder();
+            .with_protocol_imitation(crate::noise::amnezia::AmneziaImitationProtocol::Quic, None);
+        amnezia
+            .set_signature_packet(0, "<b 0x494f5554>")
+            .expect("valid responder I1");
+        let amnezia = amnezia.as_responder();
         let (mut my_tun, _their_tun) = create_two_tuns_with_amnezia(amnezia);
         let mut dst = vec![0u8; 2048];
 
         let init = unwrap_network_packet(my_tun.format_handshake_initiation(&mut dst, false));
 
+        // as_responder suppresses standalone I1-I5 packets as well as Jc and
+        // imitation datagrams; the first emitted datagram must be the initiation.
+        assert_eq!(
+            u32::from_le_bytes(init[5..9].try_into().unwrap()),
+            HANDSHAKE_INIT,
+            "responder must not emit the configured I1 packet"
+        );
         assert_eq!(
             init.len(),
             HANDSHAKE_INIT_SZ + 5,

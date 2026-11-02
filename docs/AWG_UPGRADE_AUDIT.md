@@ -255,3 +255,14 @@ Real cross-implementation tests require two independently running endpoints and 
 
 - Повторно проверен endpoint `/actions/runs?per_page=20`: GitHub вернул `total_count=0`, список запусков пуст. В PR #3 head остаётся `88dfb38abf39e710d99708f802238b28be2ffd2b`; PR открыт, draft, не объединён.
 - Проверка состояния ветки подтверждает, что последний commit не изменился после предыдущей попытки. Следующий шаг — создать отдельный документационный commit в этой рабочей ветке, чтобы повторно проверить push-trigger. Это не заменяет ручной запуск и не является результатом тестов.
+
+
+
+### 2026-11-02 — TCP/UDP transport coverage added to the interop harness
+
+- Added `scripts/awg-traffic-check.py`, a standard-library-only echo probe launched inside the isolated server/client network namespaces.
+- Extended `scripts/awg-go-interop.sh` to run the probe after the official amneziawg-go client completes its handshake and ICMP check.
+- TCP sends 256 KiB, shuts down the write side, and verifies the complete echoed stream byte-for-byte. UDP sends a 1200-byte datagram and verifies the echoed payload byte-for-byte. Both request and response directions therefore cross the tunnel.
+- The UDP size is chosen to fit the harness's 1420-byte tunnel MTU with the configured S4 prefix and WireGuard overhead.
+- This adds coverage only; it is not a test result. The helper and namespace harness have **not** been executed in this environment. The cross-implementation role remains amneziawg-go client → BoringTun server; reverse-role testing is still outstanding.
+- The I1–I5 protocol implementation is unchanged. Rust compilation, formatting, clippy, unit tests and live interop remain blocked pending an actual CI run.

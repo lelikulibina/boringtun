@@ -1460,20 +1460,19 @@ mod tests {
     fn i_packets_are_emitted_in_order_before_junk_and_handshake() {
         let mut amnezia = AmneziaConfig::new(0, 0, 0, 0)
             .with_pre_handshake_junk(1, 12, 12, 0);
-        amnezia
-            .set_signature_packet(0, "<b 0x4931>")
-            .expect("valid I1");
-        amnezia
-            .set_signature_packet(2, "<b 0x4933>")
-            .expect("valid I3");
+        for index in 0..5 {
+            amnezia
+                .set_signature_packet(index, &format!("<b 0x{:02x}>", 0x49 + index))
+                .expect("valid signature packet");
+        }
         let (mut client, _) = create_two_tuns_with_amnezia(amnezia);
         let mut dst = vec![0u8; 2048];
 
-        let i1 = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
-        assert_eq!(i1, vec![0x49, 0x31]);
-
-        let i3 = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
-        assert_eq!(i3, vec![0x49, 0x33]);
+        for index in 0..5 {
+            let packet =
+                unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+            assert_eq!(packet, vec![0x49 + index as u8]);
+        }
 
         let junk = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
         assert_eq!(junk.len(), 12);

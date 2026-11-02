@@ -714,10 +714,9 @@ impl Tunn {
             let imitation_datagrams = self
                 .amnezia
                 .pre_handshake_imitation_datagrams(&mut self.handshake.rng);
-            // Like wgbooster (execute_imitation_obfuscation then
-            // send_random_packets then the handshake), the imitation sequence and
-            // the Jc random/protocol-shaped junk are both emitted: the sequence
-            // first, then `packet_count` junk packets, then the initiation.
+            // Match the reference pre-handshake order: I1-I5 signature packets,
+            // then protocol-imitation datagrams, then `packet_count` Jc packets,
+            // and finally the Noise handshake initiation.
             self.pending_amnezia_junk = Some(PendingAmneziaJunk {
                 signature_datagrams,
                 imitation_datagrams,

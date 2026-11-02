@@ -10,6 +10,7 @@ use super::{
     HANDSHAKE_RESP_SZ,
 };
 use crate::noise::errors::WireGuardError;
+use crate::noise::obfuscation::SignaturePacket;
 use rand_core::RngCore;
 use std::convert::{TryFrom, TryInto};
 use std::time::Duration;
@@ -268,6 +269,8 @@ pub struct AmneziaConfig {
     pub(crate) transport_packet_junk_size: u16,
     pub(crate) pre_handshake_junk: AmneziaPreHandshakeJunk,
     pub(crate) imitation: AmneziaImitation,
+    /// Optional I1-I5 signature packet templates, emitted before junk and handshake.
+    pub(crate) signature_packets: [Option<SignaturePacket>; 5],
     /// Suppress the client-only pre-handshake burst (Jc junk packets and the
     /// protocol imitation sequence) while keeping every other AmneziaWG
     /// behaviour. See [`AmneziaConfig::as_responder`].
@@ -358,6 +361,43 @@ impl AmneziaConfig {
             imitation: AmneziaImitation::default(),
             suppress_pre_handshake: false,
         }
+    }
+
+    /// Set or clear one I1-I5 signature packet template.
+    ///
+    /// The reference implementation emits configured packets in ascending
+    /// order before Jc junk and the Noise handshake initiation.
+    pub(crate) fn set_signature_packet(&mut self, index: usize, spec: &str) -> Result<(), String> {
+        let slot = self
+            .signature_packets
+            .get_mut(index)
+            .ok_or_else(|| format!("invalid signature packet index: {index}"))?;
+        *slot = SignaturePacket::parse(spec)?;
+        Ok(())
+    }
+
+    /// Return the exact source template for UAPI serialization.
+    pub(crate) fn signature_packet_spec(&self, index: usize) -> Option<&str> {
+        self.signature_packets
+            .get(index)
+            .and_then(Option::as_ref)
+            .map(SignaturePacket::spec)
+    }
+
+    /// Materialize configured I1-I5 datagrams in wire order.
+    pub(crate) fn pre_handshake_signature_datagrams(
+        &self,
+        rng: &mut impl RngCore,
+    ) -> std::collections::VecDeque<Vec<u8>> {
+        self.signature_packets
+            .iter()
+            .filter_map(Option::as_ref)
+            .map(|packet| packet.encode(rng))
+            .collect()
+    }
+
+    fn has_signature_packets(&self) -> bool {
+        self.signature_packets.iter().any(Option::is_some)
     }
 
     pub fn with_pre_handshake_junk(
@@ -510,7 +550,9 @@ impl AmneziaConfig {
     /// false for a responder, and for a client with neither Jc nor imitation.
     pub(crate) fn emits_pre_handshake(&self) -> bool {
         !self.suppress_pre_handshake
-            && (self.pre_handshake_junk.is_enabled() || self.has_imitation_sequence())
+            && (self.pre_handshake_junk.is_enabled()
+                || self.has_imitation_sequence()
+                || self.has_signature_packets())
     }
 
     /// The configured imitation host, or a generated random one (DNS query name

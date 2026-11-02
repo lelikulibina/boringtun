@@ -757,13 +757,13 @@ impl Tunn {
     }
 
     fn advance_amnezia_junk<'a>(&mut self, dst: &'a mut [u8]) -> TunnResult<'a> {
-        let Some(pending) = self.pending_amnezia_junk.as_ref() else {
-            return TunnResult::Done;
-        };
-
         // Signature packets have no inter-packet delay in the reference
         // implementation and precede imitation datagrams and Jc junk.
-        if let Some(size) = pending.signature_datagrams.front().map(Vec::len) {
+        let signature_size = self
+            .pending_amnezia_junk
+            .as_ref()
+            .and_then(|pending| pending.signature_datagrams.front().map(Vec::len));
+        if let Some(size) = signature_size {
             if dst.len() < size {
                 return TunnResult::Err(WireGuardError::DestinationBufferTooSmall);
             }
@@ -777,6 +777,10 @@ impl Tunn {
             dst[..size].copy_from_slice(&datagram);
             return TunnResult::WriteToNetwork(&mut dst[..size]);
         }
+
+        let Some(pending) = self.pending_amnezia_junk.as_ref() else {
+            return TunnResult::Done;
+        };
 
         // The next imitation datagram carries its own protocol-natural delay;
         // random/protocol junk uses the configured Jd delay.

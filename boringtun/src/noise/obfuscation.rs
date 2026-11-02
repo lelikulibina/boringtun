@@ -230,6 +230,22 @@ mod tests {
     }
 
     #[test]
+    fn fixed_size_transforms_emit_the_reference_lengths() {
+        let mut rng = ChaCha8Rng::seed_from_u64(11);
+        let timestamp = SignaturePacket::parse("<t>").unwrap().unwrap();
+        assert_eq!(timestamp.encode(&mut rng).len(), 4);
+
+        let random = SignaturePacket::parse("<r 17>").unwrap().unwrap();
+        assert_eq!(random.encode(&mut rng).len(), 17);
+
+        let size = SignaturePacket::parse("<dz 3>").unwrap().unwrap();
+        assert_eq!(size.encode(&mut rng), vec![0, 0, 0]);
+
+        let data = SignaturePacket::parse("<d><ds>").unwrap().unwrap();
+        assert_eq!(data.encode(&mut rng), Vec::<u8>::new());
+    }
+
+    #[test]
     fn rejects_malformed_or_unbounded_templates() {
         assert!(SignaturePacket::parse("<b abc>").is_err());
         assert!(SignaturePacket::parse("<r -1>").is_err());

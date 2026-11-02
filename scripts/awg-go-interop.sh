@@ -109,6 +109,7 @@ SRV_LOG="$WORKDIR/srv.log"
 CLI_LOG="$WORKDIR/cli.log"
 BTCLI_LOG="$WORKDIR/btcli.log"
 TRAFFIC_LOG="$WORKDIR/traffic.log"
+TRAFFIC_PID=
 SRV_SET="$WORKDIR/srv-set.txt"
 CLI_SET="$WORKDIR/cli-set.txt"
 
@@ -143,6 +144,11 @@ own_socks() { # <iface>
 # host has.
 teardown() {
   local ns link sock p killed=0
+  if [ -n "${TRAFFIC_PID:-}" ]; then
+    kill "$TRAFFIC_PID" 2>/dev/null || true
+    wait "$TRAFFIC_PID" 2>/dev/null || true
+    TRAFFIC_PID=
+  fi
   for ns in ${OWNED_NS[@]+"${OWNED_NS[@]}"}; do
     p=$(ip netns pids "$ns" 2>/dev/null)
     [ -n "$p" ] && { kill $p 2>/dev/null; killed=1; }
@@ -407,6 +413,7 @@ check_tcp_udp_traffic() {
   : >"$TRAFFIC_LOG"
   ip netns exec "$NS_SRV" python3 "$SCRIPT_DIR/awg-traffic-check.py" server >"$TRAFFIC_LOG" 2>&1 &
   pid=$!
+  TRAFFIC_PID=$pid
   for _ in $(seq 1 50); do
     if grep -q "^READY$" "$TRAFFIC_LOG"; then
       ready=1
@@ -425,6 +432,7 @@ check_tcp_udp_traffic() {
   fi
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
+  TRAFFIC_PID=
   return "$result"
 }
 echo "boringtun : $BT"
@@ -437,24 +445,26 @@ if ! start_pair 1 1; then
 else
   if handshaked; then
     ok "amneziawg-go completed a handshake against boringtun"
+
+    info "2. and passes bidirectional traffic through the tunnel"
+    if ip netns exec "$NS_CLI" ping -c3 -w 20 -q "$SRV_TUN" >/dev/null 2>&1; then
+      ok "ping through the tunnel, both directions"
+    else
+      bad "handshake but no data -- the transport path disagrees"
+    fi
+
+    info "2a. TCP and UDP payloads traverse the tunnel"
+    if check_tcp_udp_traffic; then
+      ok "256 KiB TCP and 1200-byte UDP echo verified byte-for-byte"
+    else
+      bad "TCP/UDP tunnel payload verification failed"
+      echo "traffic helper failed; see $TRAFFIC_LOG"
+    fi
   else
     bad "no handshake -- wire format disagreement"
     echo "    srv: $(tail -3 "$SRV_LOG" 2>/dev/null | tr '\n' ' ')"
     echo "    cli: $(tail -3 "$CLI_LOG" 2>/dev/null | tr '\n' ' ')"
-  fi
-
-  info "2. and passes bidirectional traffic through the tunnel"
-  if ip netns exec "$NS_CLI" ping -c3 -w 20 -q "$SRV_TUN" >/dev/null 2>&1; then
-    ok "ping through the tunnel, both directions"
-  else
-    bad "handshake but no data -- the transport path disagrees"
-  fi
-  info "2a. TCP and UDP payloads traverse the tunnel"
-  if check_tcp_udp_traffic; then
-    ok "256 KiB TCP and 1200-byte UDP echo verified byte-for-byte"
-  else
-    bad "TCP/UDP tunnel payload verification failed"
-    echo "traffic helper failed; see $TRAFFIC_LOG"
+    info "2. ICMP/TCP/UDP checks skipped because handshake failed"
   fi
 fi
 

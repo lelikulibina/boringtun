@@ -170,6 +170,7 @@ Real cross-implementation tests require two independently running endpoints and 
 - Added a public `AmneziaConfig::with_signature_packet` builder for embedders that configure the library without UAPI.
 - Added ordered pre-handshake emission: configured I1..I5 datagrams, then existing imitation datagrams/Jc junk, then Noise initiation. Too-small output buffers do not consume a queued signature packet.
 - Added unit tests for all transform tags, output order/alphabet/bounds, UAPI merge/clear/rejection, pre-handshake order, and retry-safe buffer handling.
+- Added I1-I5 template values to the real namespace interop configuration so the official client will emit signature datagrams before its handshake when the harness runs.
 - Draft PR #3 opened against the preceding stage branch `awg-3.1-core`: https://github.com/lelikulibina/boringtun/pull/3. Superseded PR #2 was closed; do not merge it.
 - CI results are still absent from the Actions API for the current PR head. Build, formatting, clippy and unit tests therefore remain **unverified**, not passed.
 - Next: fix any CI/compiler findings; add independent interop tests for both endpoint roles and real TCP/UDP payload transfer; run against the pinned official release. Then proceed to header protection, content padding, timing, trailers and cookie behavior in separate stage branches.

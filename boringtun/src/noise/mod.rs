@@ -1503,6 +1503,39 @@ mod tests {
     }
 
     #[test]
+    fn updating_obfuscation_discards_stale_pending_i_packets() {
+        let mut initial = AmneziaConfig::default();
+        initial
+            .set_signature_packet(0, "<b 0x11>")
+            .expect("valid old I1");
+        initial
+            .set_signature_packet(1, "<b 0x22>")
+            .expect("valid old I2");
+        let (mut client, _) = create_two_tuns_with_amnezia(initial);
+        let mut dst = vec![0u8; 2048];
+
+        // Start the old sequence, leaving I2 queued.
+        let first = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+        assert_eq!(first, vec![0x11]);
+        assert!(
+            client.pending_amnezia_junk.is_some(),
+            "I2 remains pending"
+        );
+
+        // A live UAPI reconfiguration must discard every datagram generated
+        // from the old templates rather than leaking stale I2 on the wire.
+        let mut updated = AmneziaConfig::default();
+        updated
+            .set_signature_packet(0, "<b 0x33>")
+            .expect("valid new I1");
+        let obf = ObfuscationRanges::new(0, 0, 0, 0, 0, 0, 0, 0).unwrap();
+        client.set_obfuscation(obf, updated);
+
+        let next = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+        assert_eq!(next, vec![0x33], "the new sequence starts immediately");
+    }
+
+    #[test]
     fn amnezia_pre_handshake_junk_precedes_handshake_initiation() {
         let amnezia = AmneziaConfig::new(5, 0, 0, 0).with_pre_handshake_junk(2, 10, 20, 0);
         let (mut my_tun, _their_tun) = create_two_tuns_with_amnezia(amnezia);

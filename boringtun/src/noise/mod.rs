@@ -93,10 +93,9 @@ pub struct Tunn {
 }
 
 struct PendingAmneziaJunk {
-    /// Pre-generated standalone imitation datagrams (DNS/SIP/STUN sequence or
-    /// browser QUIC Initials), each with the delay to wait before emitting it.
-    /// Emitted one per call before any random/protocol junk and the handshake
-    /// initiation; these use protocol-natural timing, not the Jd delay.
+    /// I1-I5 signature packets are emitted first, in their configured order.
+    signature_datagrams: VecDeque<Vec<u8>>,
+    /// Protocol-imitation datagrams follow signatures and retain their natural delays.
     imitation_datagrams: VecDeque<(Duration, Vec<u8>)>,
     remaining: u16,
     last_packet_at: Option<Instant>,
@@ -709,6 +708,9 @@ impl Tunn {
         }
 
         if self.amnezia.emits_pre_handshake() {
+            let signature_datagrams = self
+                .amnezia
+                .pre_handshake_signature_datagrams(&mut self.handshake.rng);
             let imitation_datagrams = self
                 .amnezia
                 .pre_handshake_imitation_datagrams(&mut self.handshake.rng);
@@ -717,6 +719,7 @@ impl Tunn {
             // the Jc random/protocol-shaped junk are both emitted: the sequence
             // first, then `packet_count` junk packets, then the initiation.
             self.pending_amnezia_junk = Some(PendingAmneziaJunk {
+                signature_datagrams,
                 imitation_datagrams,
                 remaining: self.amnezia.pre_handshake_junk.packet_count,
                 last_packet_at: None,
@@ -757,6 +760,23 @@ impl Tunn {
         let Some(pending) = self.pending_amnezia_junk.as_ref() else {
             return TunnResult::Done;
         };
+
+        // Signature packets have no inter-packet delay in the reference
+        // implementation and precede imitation datagrams and Jc junk.
+        if let Some(size) = pending.signature_datagrams.front().map(Vec::len) {
+            if dst.len() < size {
+                return TunnResult::Err(WireGuardError::DestinationBufferTooSmall);
+            }
+            let datagram = self
+                .pending_amnezia_junk
+                .as_mut()
+                .expect("pending checked above")
+                .signature_datagrams
+                .pop_front()
+                .expect("front checked above");
+            dst[..size].copy_from_slice(&datagram);
+            return TunnResult::WriteToNetwork(&mut dst[..size]);
+        }
 
         // The next imitation datagram carries its own protocol-natural delay;
         // random/protocol junk uses the configured Jd delay.

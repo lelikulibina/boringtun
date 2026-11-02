@@ -13,46 +13,63 @@ Upgrade the BoringTun fork from the `awg-2.0-extensions` baseline to the current
 - The final, fully tested result must be delivered in a separate `awg-final-release` branch.
 - Never merge unverified changes into the next stage or into the final branch.
 
-## Reference baseline — initial observations
+## Pinned reference
 
-The official repository's current `master` README documents AWG 3+ features, including:
+- Repository: https://github.com/amnezia-vpn/amneziawg-go
+- Stable tag: `v3.1.20260828`
+- Tag commit: `b5928efb6ca19f0153958460c3d141f04abc5c2e`
+- The tag points at the same commit currently observed at the official `master` head.
+- Module path at that commit: `github.com/amnezia-vpn/amneziawg-go/v3`
+- The official `go.mod` declares Go 1.25.0.
 
-- Header protection using a server-side `HeaderProtectionKey`, with a stated requirement that S1–S4 be at least 12.
-- Content padding using `ContentPaddingAddition`.
-- Configurable timing parameters: `RekeyAfterTime`, `RekeyTimeout`, `RejectAfterTime`, `KeepaliveTimeout`, `MaxHandshakeAttempts`, and peer `PersistentKeepalive`.
-- Junk packets Jc/Jmin/Jmax.
-- S1–S4 message padding and H1–H4 header ranges.
-- Custom signature packets I1–I5 and their byte/random/digit/character/timestamp template tags.
+All subsequent comparisons must use the pinned tag/commit, not a moving `master` reference. Re-pin only if a newer stable official tag is found before implementation starts; record the reason and the new commit explicitly.
 
-The official `go.mod` declares module path `github.com/amnezia-vpn/amneziawg-go/v3` and Go 1.25.0. This confirms that the current default branch is a v3 line, but it does **not** by itself identify a stable release tag or prove the exact wire compatibility level. The exact release tag and commit SHA must be pinned before protocol implementation begins. Do not label the target as 3.1 without verifying the official tags/releases and source history.
+## Official AWG 3.1 protocol surface confirmed in source
+
+The official README, UAPI, device state, send/receive pipeline and helper files confirm these feature groups:
+
+1. **Header protection** — `header_protection_key`; a ChaCha20 stream cipher is derived using the per-packet salt. Receive-side classification decrypts the type hash, and packet fields are unmasked in the receive path. The README requires S1–S4 to be at least 12 when header protection is enabled.
+2. **Content padding** — `content_padding_addition`; a configurable range used for additional padding of transport payloads, constrained by the peer's UDP window/MTU.
+3. **Timing ranges** — `rekey_after_time`, `rekey_timeout`, `reject_after_time`, `keepalive_timeout`, `max_handshake_attempts`, and peer `persistent_keepalive`.
+4. **Random trailers** — `random_trailers`; handshake and cookie packets may include random trailing bytes; receive-side packet classification accounts for this mode.
+5. **Cookie control** — `disable_cookies`; the pinned commit specifically changes under-load handling so cookie-based load mitigation is disabled consistently when this option is set.
+6. **I1–I5 custom signature packets** — configured as transformation chains and sent before handshake initiation. The source parser supports tags `b`, `t`, `r`, `rc`, `rd`, `d`, `ds`, and `dz`; implementation must reproduce the pinned source semantics and validate lengths safely.
+7. **Existing AWG 2.0 fields** — Jc/Jmin/Jmax, S1–S4, H1–H4 continue to be represented in UAPI and the packet pipeline.
+8. **Wire behavior** — the reference send/receive pipeline applies prefix padding, header protection, optional random trailers, content padding, and signature/junk sequencing at specific points. Reproducing only config parsing is insufficient.
+
+Relevant reference source files include `device/noise-protocol.go`, `device/send.go`, `device/receive.go`, `device/timers.go`, `device/device.go`, `device/peer.go`, `device/uapi.go`, and `device/obf*.go`.
 
 ## Initial target-branch inventory
 
 Inspected on `awg-2.0-extensions`:
 
 - `boringtun/src/device/api.rs` contains UAPI support for Jc/Jmin/Jmax, S1–S4, and H1–H4; H1–H4 accept a single value or inclusive range. It publishes the UAPI socket under both WireGuard and AmneziaWG runtime directories.
-- The UAPI parser recognizes I1–I5 but currently treats them as no-op parameters. This is a functional gap relative to the current official README's custom signature packet configuration.
+- The UAPI parser recognizes I1–I5 but currently treats them as no-op parameters. The official reference parses and stores transformation chains for all five packets and emits them before handshake initiation.
+- `boringtun/src/noise/amnezia.rs` contains S1–S4, Jc/Jmin/Jmax, Jd and fork-specific DNS/QUIC/SIP/STUN imitation. It does not currently expose the AWG 3.1 header-protection key, content-padding range, timing ranges, random-trailer flag, or cookie-disable flag.
+- `boringtun/src/noise/handshake.rs` contains H1–H4 range handling and random tag selection. The inspected handshake path writes the randomized header value, but no AWG 3.1 header-protection transform is present in this file.
+- `boringtun/src/noise/session.rs` implements WireGuard AEAD sessions and replay-counter validation; the inspected structure has no AWG 3.1 content-padding configuration or transport header-protection integration.
+- `boringtun/src/noise/timers.rs` uses fixed WireGuard timing constants; configurable AWG 3.1 timing ranges are not represented in the inspected timer configuration.
 - `boringtun/src/noise/mod.rs` contains AWG packet-handling tests, H1–H4 range tests, junk packet tests, and protocol-imitation tests. Existing imitation and Jd behavior are fork-specific and must be preserved unless tests show a conflict.
 - `README.md` remains the upstream BoringTun README and does not yet document the fork's AmneziaWG behavior.
 - Workspace is a Rust Cargo workspace with `boringtun` and `boringtun-cli`.
 
-This is a preliminary inventory, not a complete protocol audit. Inspect the full dependency graph, configuration types, handshake/session/transport paths, timers, packet serialization, CLI and FFI surfaces before implementation.
+This inventory is preliminary. In particular, every receive/send packet offset, UAPI transaction boundary, timer transition and MTU calculation must be reviewed before implementing changes.
 
 ## Mandatory protocol audit matrix
 
-For every official feature, record: source file and symbol in the Go reference; wire format and state transitions; matching Rust code (or absence); config/UAPI exposure; compatibility constraints; unit tests; cross-implementation test result.
+For every official feature, record: source file and symbol in the pinned Go reference; wire format and state transitions; matching Rust code (or absence); config/UAPI exposure; compatibility constraints; unit tests; cross-implementation test result.
 
 1. Baseline WireGuard handshake and transport behavior.
 2. H1–H4 magic header ranges, validation, random selection, and packet classification.
 3. S1–S4 padding, size bounds, and interaction with MTU.
 4. Jc/Jmin/Jmax generation and pre-handshake sequencing.
-5. I1–I5 template parsing, expansion, sequencing, retransmission, and timing.
-6. AWG 3+ header protection, key lifecycle, nonce construction, and authenticated packet handling.
-7. AWG 3+ content padding and its negotiation/compatibility semantics.
-8. AWG 3+ timing parameters and their effect on handshake, keepalive, rekey, and rejection.
-9. Cookie behavior and any disable-cookie mode.
-10. Any trailer/random-trailer behavior present in the pinned reference source.
-11. UAPI/config parsing, serialization, defaults, validation, and error behavior.
+5. I1–I5 template parser and every official tag, expansion, sequencing, retry semantics, and timing.
+6. AWG 3.1 header protection: key lifecycle, nonce/salt construction, fields protected, order relative to MAC calculation and padding, and receive-side inverse transform.
+7. AWG 3.1 content padding: selection range, padding algorithm, peer UDP window/MTU handling, and removal on receive.
+8. AWG 3.1 timing parameters and their effect on handshake, keepalive, rekey, reject, and maximum attempts.
+9. Cookie behavior, under-load handling, and disable-cookie mode.
+10. Random trailer generation, size bounds, and receive-side packet classification.
+11. UAPI/config parsing, serialization, defaults, validation, atomicity, and error behavior.
 12. Existing fork-only imitation features (DNS, QUIC, SIP, STUN, browser profiles, Jd) and their regression/interaction behavior.
 13. Vanilla WireGuard regression and platform-specific behavior.
 
@@ -79,11 +96,13 @@ Real cross-implementation tests require two independently running endpoints and 
 
 ## Progress log
 
-### 2026-11-02 — start
+### 2026-11-02 — start and initial source comparison
 
 - Created isolated branch `awg-audit` from `awg-2.0-extensions`.
-- Confirmed repository write permission.
-- Confirmed official default branch currently declares module path `/v3` and README documents AWG 3+ settings.
-- Initial gap found: I1–I5 are accepted as no-op in target UAPI, while the official README documents custom signature packet support.
-- No protocol implementation changes have been made yet.
-- Next: pin the exact official stable release/tag and commit; inspect all relevant Go and Rust source paths; complete the feature matrix and establish a baseline test harness.
+- Added this audit and continuity document.
+- Pinned official stable tag `v3.1.20260828` to commit `b5928efb6ca19f0153958460c3d141f04abc5c2e`.
+- Confirmed official module path `/v3` and Go 1.25.0.
+- Confirmed initial gaps: I1–I5 are no-op in target UAPI; target config lacks AWG 3.1 header protection, content padding, configurable timings, random trailers, and disable-cookie support.
+- Confirmed official I-packet parser supports eight transform tags, beyond the simplified examples in the README.
+- No protocol implementation changes have been made yet. The audit branch contains documentation only.
+- Next: complete detailed source-to-source mapping and establish baseline build/test results; then create a separate implementation branch from the reviewed audit snapshot.

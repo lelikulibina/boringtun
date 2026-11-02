@@ -1659,14 +1659,14 @@ mod tests {
         // as_responder suppresses standalone I1-I5 packets as well as Jc and
         // imitation datagrams; the first emitted datagram must be the initiation.
         assert_eq!(
-            u32::from_le_bytes(init[5..9].try_into().unwrap()),
-            HANDSHAKE_INIT,
-            "responder must not emit the configured I1 packet"
-        );
-        assert_eq!(
             init.len(),
             HANDSHAKE_INIT_SZ + 5,
             "a responder emits the initiation directly, still S1-padded"
+        );
+        assert_eq!(
+            u32::from_le_bytes(init[5..9].try_into().unwrap()),
+            HANDSHAKE_INIT,
+            "responder must not emit the configured I1 packet"
         );
         assert_eq!(
             u32::from_le_bytes(init[5..9].try_into().unwrap()),

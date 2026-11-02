@@ -24,6 +24,7 @@ jobs:
       - tests
       - integration-tests
       - test-windows
+      - awg-go-interop
     steps:
       - run: exit 0
 
@@ -103,3 +104,32 @@ jobs:
         with:
           toolchain: stable
       - run: cargo test -- --ignored
+
+  # Cross-implementation test against the exact official AWG 3.1 reference.
+  # The script creates disposable network namespaces and transfers real ICMP,
+  # TCP and UDP traffic; this is intentionally a privileged Linux-only job.
+  awg-go-interop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.0'
+
+      - name: Install network test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iproute2 iputils-ping python3-cryptography
+
+      - name: Build BoringTun
+        run: cargo build --release -p boringtun-cli
+
+      - name: Build pinned AmneziaWG reference
+        run: |
+          git clone --depth 1 --branch v3.1.20260828 https://github.com/amnezia-vpn/amneziawg-go.git /tmp/amneziawg-go
+          cd /tmp/amneziawg-go
+          go build -o /tmp/amneziawg-go-bin .
+
+      - name: Run real cross-implementation traffic tests
+        run: sudo bash scripts/awg-go-interop.sh "$GITHUB_WORKSPACE/target/release/boringtun-cli" /tmp/amneziawg-go-bin

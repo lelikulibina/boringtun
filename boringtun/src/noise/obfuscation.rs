@@ -205,7 +205,7 @@ mod tests {
     fn emits_reference_prefixes_in_chain_order() {
         let packet = SignaturePacket::parse("<b deadbeef><dz 2><d>").unwrap().unwrap();
         let mut rng = ChaCha8Rng::seed_from_u64(7);
-        assert_eq!(packet.encode(&mut rng), [0xde, 0xad, 0xbe, 0xef, 0, 0]);
+        assert_eq!(packet.encode(&mut rng), vec![0xde, 0xad, 0xbe, 0xef, 0, 0]);
     }
 
     #[test]

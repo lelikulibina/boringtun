@@ -148,7 +148,7 @@ Real cross-implementation tests require two independently running endpoints and 
 
 - Created implementation/test-infrastructure branch `awg-3.1-core` from the isolated audit branch; the original source branches remain untouched.
 - Expanded the GitHub Actions branch filters to cover isolated `awg-*` work branches.
-- The existing `scripts/awg-go-interop.sh` was restored unchanged after an attempted extension produced malformed shell syntax. It currently validates the original amneziawg-go-client to BoringTun-server path and ICMP traffic only. Reverse-role and TCP/UDP coverage remain outstanding.
+- The original `scripts/awg-go-interop.sh` was restored after an attempted reverse-role extension produced malformed shell syntax. A narrow, syntax-checked change now adds I1-I5 templates to its UAPI config. It still validates only the amneziawg-go-client to BoringTun-server path and ICMP traffic; reverse-role and TCP/UDP coverage remain outstanding.
 - Added an Ubuntu CI job that builds BoringTun, builds the exact official `v3.1.20260828` tag, and runs the existing namespace-based interop harness (currently one direction, ICMP).
 - Opened draft PR #1 against `awg-2.0-extensions` only as a review/CI checkpoint: https://github.com/lelikulibina/boringtun/pull/1. It is explicitly marked draft and must not be merged.
 - At this checkpoint, GitHub's status endpoint has not returned any checks/workflow runs. Therefore the new harness and CI job are **not yet verified as executed**. Do not mark this stage passed until the workflow result is observed and failures are fixed.

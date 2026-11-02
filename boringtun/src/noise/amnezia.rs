@@ -271,8 +271,8 @@ pub struct AmneziaConfig {
     pub(crate) imitation: AmneziaImitation,
     /// Optional I1-I5 signature packet templates, emitted before junk and handshake.
     pub(crate) signature_packets: [Option<SignaturePacket>; 5],
-    /// Suppress the client-only pre-handshake burst (Jc junk packets and the
-    /// protocol imitation sequence) while keeping every other AmneziaWG
+    /// Suppress client-only pre-handshake datagrams (I1-I5, Jc junk packets,
+    /// and the protocol imitation sequence) while keeping other AmneziaWG
     /// behaviour. See [`AmneziaConfig::as_responder`].
     pub(crate) suppress_pre_handshake: bool,
 }
@@ -562,7 +562,7 @@ impl AmneziaConfig {
     }
 
     /// True when this endpoint should emit a pre-handshake burst at all —
-    /// false for a responder, and for a client with neither Jc nor imitation.
+    /// false for a responder, or a client without I packets, Jc, or imitation.
     pub(crate) fn emits_pre_handshake(&self) -> bool {
         !self.suppress_pre_handshake
             && (self.pre_handshake_junk.is_enabled()

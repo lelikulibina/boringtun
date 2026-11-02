@@ -3,6 +3,7 @@
 
 pub mod amnezia;
 pub mod errors;
+pub(crate) mod obfuscation;
 pub mod handshake;
 // `pub(crate)` rather than private: `device::probe_reply` builds the replies
 // from the same modules that generate the outbound cover traffic, which is the
@@ -92,10 +93,9 @@ pub struct Tunn {
 }
 
 struct PendingAmneziaJunk {
-    /// Pre-generated standalone imitation datagrams (DNS/SIP/STUN sequence or
-    /// browser QUIC Initials), each with the delay to wait before emitting it.
-    /// Emitted one per call before any random/protocol junk and the handshake
-    /// initiation; these use protocol-natural timing, not the Jd delay.
+    /// I1-I5 signature packets are emitted first, in their configured order.
+    signature_datagrams: VecDeque<Vec<u8>>,
+    /// Protocol-imitation datagrams follow signatures and retain their natural delays.
     imitation_datagrams: VecDeque<(Duration, Vec<u8>)>,
     remaining: u16,
     last_packet_at: Option<Instant>,
@@ -708,14 +708,17 @@ impl Tunn {
         }
 
         if self.amnezia.emits_pre_handshake() {
+            let signature_datagrams = self
+                .amnezia
+                .pre_handshake_signature_datagrams(&mut self.handshake.rng);
             let imitation_datagrams = self
                 .amnezia
                 .pre_handshake_imitation_datagrams(&mut self.handshake.rng);
-            // Like wgbooster (execute_imitation_obfuscation then
-            // send_random_packets then the handshake), the imitation sequence and
-            // the Jc random/protocol-shaped junk are both emitted: the sequence
-            // first, then `packet_count` junk packets, then the initiation.
+            // Match the reference pre-handshake order: I1-I5 signature packets,
+            // then protocol-imitation datagrams, then `packet_count` Jc packets,
+            // and finally the Noise handshake initiation.
             self.pending_amnezia_junk = Some(PendingAmneziaJunk {
+                signature_datagrams,
                 imitation_datagrams,
                 remaining: self.amnezia.pre_handshake_junk.packet_count,
                 last_packet_at: None,
@@ -753,6 +756,27 @@ impl Tunn {
     }
 
     fn advance_amnezia_junk<'a>(&mut self, dst: &'a mut [u8]) -> TunnResult<'a> {
+        // Signature packets have no inter-packet delay in the reference
+        // implementation and precede imitation datagrams and Jc junk.
+        let signature_size = self
+            .pending_amnezia_junk
+            .as_ref()
+            .and_then(|pending| pending.signature_datagrams.front().map(Vec::len));
+        if let Some(size) = signature_size {
+            if dst.len() < size {
+                return TunnResult::Err(WireGuardError::DestinationBufferTooSmall);
+            }
+            let datagram = self
+                .pending_amnezia_junk
+                .as_mut()
+                .expect("pending checked above")
+                .signature_datagrams
+                .pop_front()
+                .expect("front checked above");
+            dst[..size].copy_from_slice(&datagram);
+            return TunnResult::WriteToNetwork(&mut dst[..size]);
+        }
+
         let Some(pending) = self.pending_amnezia_junk.as_ref() else {
             return TunnResult::Done;
         };
@@ -1433,6 +1457,114 @@ mod tests {
     }
 
     #[test]
+    fn i_packets_are_emitted_in_order_before_junk_and_handshake() {
+        let mut amnezia = AmneziaConfig::new(0, 0, 0, 0)
+            .with_pre_handshake_junk(1, 12, 12, 0);
+        for index in 0..5 {
+            amnezia
+                .set_signature_packet(index, &format!("<b 0x{:02x}>", 0x49 + index))
+                .expect("valid signature packet");
+        }
+        let (mut client, _) = create_two_tuns_with_amnezia(amnezia);
+        let mut dst = vec![0u8; 2048];
+
+        for index in 0..5 {
+            let packet =
+                unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+            assert_eq!(packet, vec![0x49 + index as u8]);
+        }
+
+        let junk = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+        assert_eq!(junk.len(), 12);
+
+        let initiation = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+        assert_eq!(
+            u32::from_le_bytes(initiation[..4].try_into().unwrap()),
+            HANDSHAKE_INIT
+        );
+    }
+
+    #[test]
+    fn too_small_buffer_does_not_consume_an_i_packet() {
+        let mut amnezia = AmneziaConfig::default();
+        amnezia
+            .set_signature_packet(0, "<b 0x01020304>")
+            .expect("valid I1");
+        let (mut client, _) = create_two_tuns_with_amnezia(amnezia);
+        let mut small = [0u8; 2];
+        assert!(matches!(
+            client.format_handshake_initiation(&mut small, false),
+            TunnResult::Err(WireGuardError::DestinationBufferTooSmall)
+        ));
+
+        let mut large = [0u8; 2048];
+        let packet = unwrap_network_packet(client.format_handshake_initiation(&mut large, false));
+        assert_eq!(packet, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn forced_handshake_retry_drains_pending_i_packets_without_restarting_them() {
+        let mut amnezia = AmneziaConfig::default();
+        amnezia
+            .set_signature_packet(0, "<b 0x41>")
+            .expect("valid I1");
+        amnezia
+            .set_signature_packet(1, "<b 0x42>")
+            .expect("valid I2");
+        let (mut client, _) = create_two_tuns_with_amnezia(amnezia);
+        let mut dst = vec![0u8; 2048];
+
+        let first = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+        assert_eq!(first, vec![0x41]);
+
+        // A forced retry while pre-handshake output is pending must continue
+        // the existing sequence, not regenerate and replay I1.
+        let second = unwrap_network_packet(client.format_handshake_initiation(&mut dst, true));
+        assert_eq!(second, vec![0x42]);
+
+        let initiation =
+            unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+        assert_eq!(
+            u32::from_le_bytes(initiation[..4].try_into().unwrap()),
+            HANDSHAKE_INIT
+        );
+        assert!(client.pending_amnezia_junk.is_none());
+    }
+
+    #[test]
+    fn updating_obfuscation_discards_stale_pending_i_packets() {
+        let mut initial = AmneziaConfig::default();
+        initial
+            .set_signature_packet(0, "<b 0x11>")
+            .expect("valid old I1");
+        initial
+            .set_signature_packet(1, "<b 0x22>")
+            .expect("valid old I2");
+        let (mut client, _) = create_two_tuns_with_amnezia(initial);
+        let mut dst = vec![0u8; 2048];
+
+        // Start the old sequence, leaving I2 queued.
+        let first = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+        assert_eq!(first, vec![0x11]);
+        assert!(
+            client.pending_amnezia_junk.is_some(),
+            "I2 remains pending"
+        );
+
+        // A live UAPI reconfiguration must discard every datagram generated
+        // from the old templates rather than leaking stale I2 on the wire.
+        let mut updated = AmneziaConfig::default();
+        updated
+            .set_signature_packet(0, "<b 0x33>")
+            .expect("valid new I1");
+        let obf = ObfuscationRanges::new(0, 0, 0, 0, 0, 0, 0, 0).unwrap();
+        client.set_obfuscation(obf, updated);
+
+        let next = unwrap_network_packet(client.format_handshake_initiation(&mut dst, false));
+        assert_eq!(next, vec![0x33], "the new sequence starts immediately");
+    }
+
+    #[test]
     fn amnezia_pre_handshake_junk_precedes_handshake_initiation() {
         let amnezia = AmneziaConfig::new(5, 0, 0, 0).with_pre_handshake_junk(2, 10, 20, 0);
         let (mut my_tun, _their_tun) = create_two_tuns_with_amnezia(amnezia);
@@ -1574,15 +1706,20 @@ mod tests {
         // Same configuration as the test above, but adapted for a responder:
         // the initiation must come out immediately, with no junk datagrams
         // ahead of it, while S1 padding is still applied.
-        let amnezia = AmneziaConfig::new(5, 0, 0, 0)
+        let mut amnezia = AmneziaConfig::new(5, 0, 0, 0)
             .with_pre_handshake_junk(2, 10, 20, 0)
-            .with_protocol_imitation(crate::noise::amnezia::AmneziaImitationProtocol::Quic, None)
-            .as_responder();
+            .with_protocol_imitation(crate::noise::amnezia::AmneziaImitationProtocol::Quic, None);
+        amnezia
+            .set_signature_packet(0, "<b 0x494f5554>")
+            .expect("valid responder I1");
+        let amnezia = amnezia.as_responder();
         let (mut my_tun, _their_tun) = create_two_tuns_with_amnezia(amnezia);
         let mut dst = vec![0u8; 2048];
 
         let init = unwrap_network_packet(my_tun.format_handshake_initiation(&mut dst, false));
 
+        // as_responder suppresses standalone I1-I5 packets as well as Jc and
+        // imitation datagrams; the first emitted datagram must be the initiation.
         assert_eq!(
             init.len(),
             HANDSHAKE_INIT_SZ + 5,
@@ -1590,7 +1727,8 @@ mod tests {
         );
         assert_eq!(
             u32::from_le_bytes(init[5..9].try_into().unwrap()),
-            HANDSHAKE_INIT
+            HANDSHAKE_INIT,
+            "responder must not emit the configured I1 packet"
         );
         // The imitation protocol is retained, so the padding is still
         // protocol-shaped rather than random: QUIC uses a 1-RTT short header.

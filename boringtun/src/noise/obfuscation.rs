@@ -152,7 +152,7 @@ impl SignaturePacket {
                 }
                 Transform::Random(length) => {
                     let start = output.len();
-                    output.resize(start + length, 0);
+                    output.resize(start + *length, 0);
                     rng.fill_bytes(&mut output[start..]);
                 }
                 Transform::RandomChars(length) => {

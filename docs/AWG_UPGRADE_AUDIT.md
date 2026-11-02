@@ -191,3 +191,5 @@ Real cross-implementation tests require two independently running endpoints and 
 - Repository-wide Actions query still reports zero runs. This cannot be resolved through the available GitHub connection because it exposes read-only repository/workflow inspection, not the repository Actions enablement settings or a workflow-dispatch write operation.
 
 - Expanded the ordered-emission unit test to configure all five slots and assert I1, I2, I3, I4, I5 are emitted in order before Jc and the Noise initiation. The test is added but has not run because CI remains unavailable.
+
+- Corrected the workflow's interop job comments/name: they had claimed TCP/UDP payload coverage that the current shell harness does not implement. The job is now explicitly described as handshake + ICMP only; reverse-role and TCP/UDP remain open tasks.

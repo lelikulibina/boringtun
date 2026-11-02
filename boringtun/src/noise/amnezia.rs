@@ -359,6 +359,7 @@ impl AmneziaConfig {
             transport_packet_junk_size: s4,
             pre_handshake_junk: AmneziaPreHandshakeJunk::default(),
             imitation: AmneziaImitation::default(),
+            signature_packets: [None, None, None, None, None],
             suppress_pre_handshake: false,
         }
     }

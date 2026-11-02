@@ -377,6 +377,20 @@ impl AmneziaConfig {
         Ok(())
     }
 
+    /// Configure one AWG I1-I5 signature packet template.
+    ///
+    /// Use indices 0 through 4 for I1 through I5. An empty template clears
+    /// the selected slot. Invalid tags and templates larger than one UDP
+    /// payload are rejected before the configuration is returned.
+    pub fn with_signature_packet(
+        mut self,
+        index: usize,
+        spec: &str,
+    ) -> Result<Self, String> {
+        self.set_signature_packet(index, spec)?;
+        Ok(self)
+    }
+
     /// Return the exact source template for UAPI serialization.
     pub(crate) fn signature_packet_spec(&self, index: usize) -> Option<&str> {
         self.signature_packets

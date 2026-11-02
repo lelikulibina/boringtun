@@ -157,7 +157,7 @@ impl SignaturePacket {
                 }
                 Transform::RandomChars(length) => {
                     let start = output.len();
-                    output.resize(start + length, 0);
+                    output.resize(start + *length, 0);
                     rng.fill_bytes(&mut output[start..]);
                     for byte in &mut output[start..] {
                         *byte = CHARS52[(*byte as usize) % CHARS52.len()];

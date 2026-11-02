@@ -223,3 +223,10 @@ Real cross-implementation tests require two independently running endpoints and 
 - Reviewed the intentional safety divergence for length-bearing tags: Rust rejects negative lengths and bounds each and total packet length to the maximum IPv4 UDP payload. The Go constructors use signed strconv.Atoi without equivalent bounds; negative lengths can later panic during slicing/encoding. Accepting those values would not provide a functioning interoperable packet, so the Rust validation is a deliberate hardening rather than a wire-format deviation.
 - Confirmed the dz big-endian source-length field is all zero for I1-I5 because upstream calls each I-chain with a nil source slice. The same nil-source call means d emits zero bytes and ds emits an empty raw-base64 string.
 - No additional wire-format mismatch was found in this pass. No code change was justified. Remaining unverified items include compilation, parser/UAPI runtime tests, and actual cross-implementation packet capture; this static review does not close the I-packet stage.
+
+
+### 2026-11-02 — I-chain parser error accumulation fix
+
+- A closer review of `SignaturePacket::parse` found that the numeric-length branch used `?` inside the tag match. That returned from the whole parser on the first malformed length, despite the surrounding implementation and upstream Go parser accumulating independent tag errors.
+- Changed the length branch to keep the parse failure as a per-tag `Result`, allowing the parser to continue and report subsequent unknown/malformed tags in the same response. Wire encoding and accepted valid templates are unchanged.
+- Added a regression test with `<r nope><unknown 1>` asserting that both errors are reported. The change is committed but remains uncompiled and unexecuted because no Rust toolchain/CI run is available.

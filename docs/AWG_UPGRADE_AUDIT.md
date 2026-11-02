@@ -255,3 +255,62 @@ Real cross-implementation tests require two independently running endpoints and 
 
 - Повторно проверен endpoint `/actions/runs?per_page=20`: GitHub вернул `total_count=0`, список запусков пуст. В PR #3 head остаётся `88dfb38abf39e710d99708f802238b28be2ffd2b`; PR открыт, draft, не объединён.
 - Проверка состояния ветки подтверждает, что последний commit не изменился после предыдущей попытки. Следующий шаг — создать отдельный документационный commit в этой рабочей ветке, чтобы повторно проверить push-trigger. Это не заменяет ручной запуск и не является результатом тестов.
+
+
+
+### 2026-11-02 — TCP/UDP transport coverage added to the interop harness
+
+- Added `scripts/awg-traffic-check.py`, a standard-library-only echo probe launched inside the isolated server/client network namespaces.
+- Extended `scripts/awg-go-interop.sh` to run the probe after the official amneziawg-go client completes its handshake and ICMP check.
+- TCP sends 256 KiB, shuts down the write side, and verifies the complete echoed stream byte-for-byte. UDP sends a 1200-byte datagram and verifies the echoed payload byte-for-byte. Both request and response directions therefore cross the tunnel.
+- The UDP size is chosen to fit the harness's 1420-byte tunnel MTU with the configured S4 prefix and WireGuard overhead.
+- This adds coverage only; it is not a test result. The helper and namespace harness have **not** been executed in this environment. The cross-implementation role remains amneziawg-go client → BoringTun server; reverse-role testing is still outstanding.
+- The I1–I5 protocol implementation is unchanged. Rust compilation, formatting, clippy, unit tests and live interop remain blocked pending an actual CI run.
+
+
+- Local-only functional check: the Python helper was syntax-parsed and then run with its endpoint changed to loopback; it successfully echoed 262,144 TCP bytes and 1,200 UDP bytes byte-for-byte. This validates the helper's socket logic, **not** the tunnel or namespace harness.
+- GitHub Actions was observed again after the branch update. The latest `PR Status Checks` run (`41439474240`) and Semgrep run (`41439472908`) both ended in `startup_failure`; the workflow-runs API reports no jobs for these runs. GitHub defines `startup_failure` as a check-suite startup failure, not a job-level test failure. No Rust or network test has started, so the protocol stage remains blocked.
+
+
+### Header-protection integration map — static source review
+
+The next Rust stage should be implemented around these confirmed call sites, rather than adding a detached cipher helper:
+
+- Outbound packets of all four kinds converge on `Tunn::write_to_network`, which currently calls `AmneziaConfig::prepend_outbound`. This is the central point to add header masking **after** S-prefix bytes have been generated, so the first 12 prefix bytes can be used as the ChaCha20 nonce and the complete fixed/transport message (including handshake MACs) can be masked.
+- Inbound packets enter `Tunn::decapsulate`, which currently calls `strip_inbound` before `RateLimiter::verify_packet` and packet parsing. Header unmasking must happen before `strip_inbound`, otherwise the masked H1-H4 type cannot be classified. The current `datagram: &[u8]` API is immutable; the implementation needs a bounded mutable scratch copy or a carefully redesigned receive buffer. Reusing `dst` is unsafe because the caller's tunnel-output buffer is not guaranteed to hold the full UDP datagram.
+- The key belongs to interface-wide Amnezia configuration and must participate in the existing transactional UAPI merge. A non-zero key is valid only when all S1-S4 prefix lengths are at least 12 bytes; validate the merged tuple atomically, not one UAPI line at a time.
+- The pinned Go sender creates a ChaCha20 stream using the first 12 S-prefix bytes as nonce, starts at the stream beginning, and XORs the complete Noise message after MAC generation. The receiver first recovers the masked message type from the first four keystream bytes, identifies the matching S/H pair, then continues the same stream over the remaining message bytes. A zero key disables masking.
+- Tests must cover each of H1/H2/H3/H4, both zero and non-zero key, nonce changes, wrong S/H candidate, truncated prefixes, invalid key/S combinations, MAC verification after unmasking, and transport receiver-index/counter recovery. Cross-implementation packet captures are required before declaring parity.
+
+This is a call-site and ordering map only. No header-protection code has been added, compiled or tested in this stage.
+
+
+### Header-protection source review correction — exact masked byte ranges
+
+A deeper read of the pinned `device/send.go` and `device/receive.go` corrects an overly broad phrase in the earlier integration map:
+
+- Handshake initiation, response and cookie reply: after MAC generation, ChaCha20 XOR covers the complete fixed-size Noise message (from message type through MAC fields), excluding S-prefix and random trailer.
+- Transport data: ChaCha20 XOR covers **only the 16-byte transport header** (type + receiver index + counter), not the AEAD ciphertext/content. The receiver first derives four keystream bytes to classify H4, then applies those four bytes to the type and consumes the next 12 stream bytes for receiver/counter. The encrypted payload remains untouched for normal AEAD verification.
+- The cipher is initialized from the first 12 bytes of the S-prefix, uses the configured 32-byte key, and begins at stream position zero for each datagram.
+- The previous wording that described the transport message as a whole being masked was imprecise; implementation and tests must use the packet-kind-specific ranges above.
+
+Pinned references: `device/send.go`, `device/receive.go`, `device/noise-types.go`, tag `v3.1.20260828`.
+
+
+### 2026-11-02 — interop harness gating and local helper checks
+
+- Corrected the positive interop flow so ICMP/TCP/UDP checks run only after `handshaked()` succeeds. A failed handshake is now reported as the primary failure and the traffic checks are explicitly skipped.
+- The background Python echo server PID is tracked and reaped both after the traffic test and during global teardown.
+- Local checks in this execution environment: `python3 -m py_compile` passed for the helper; a loopback run echoed 262,144 TCP bytes and a 1,200-byte UDP datagram byte-for-byte; the extracted updated Bash lifecycle/traffic functions passed `bash -n`.
+- These checks do not execute the complete 21-KB namespace harness. It has not been run against either tunnel implementation.
+- Rust compiler validation remains unavailable: neither `cargo` nor `rustc` is installed, and DNS resolution for `static.rust-lang.org` fails in this execution environment, so the toolchain cannot be installed here.
+- Latest PR #5 head: `c0fba7acf852cfb1a8be7a8005de10dc38f00f4b`. GitHub Actions runs `41440438173`, `41440436450`, and `41440429686` ended in `startup_failure`; the workflow run API reports zero jobs. This is an infrastructure startup failure, not a failing test.
+- PR #5 remains draft and unmerged. PR #3 and PR #4 remain unmerged. No source branch or final release branch was merged.
+
+
+### 2026-11-02 — post-permission-change Actions retest request
+
+- Repository metadata confirms the connected GitHub identity has repository admin permission. This does not expose or prove the repository's Actions enablement, workflow permission, or runner configuration.
+- The latest observed runs for PR #5 head `65eb0dd641b040f002466de07a58af4c0572e27c` (`41440714635`, `41440713353`, and `41440707922`) all concluded `startup_failure`; the run-jobs endpoint returned an empty job list.
+- A documentation-only update is being pushed to this branch to request a fresh push/pull-request workflow run after the owner's settings change. This is a trigger probe, not a code or test result.
+- Do not treat the Actions configuration as verified until a new run creates at least one job and its logs show runner startup. No Rust implementation or source behavior is changed by this entry.

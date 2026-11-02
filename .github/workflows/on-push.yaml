@@ -107,8 +107,8 @@ jobs:
       - run: cargo test -- --ignored
 
   # Cross-implementation test against the exact official AWG 3.1 reference.
-  # The current harness verifies the handshake and ICMP only. Reverse-role,
-  # TCP and UDP payload coverage are not implemented yet.
+  # The current harness verifies handshake, ICMP, TCP and UDP in one role.
+  # Reverse-role interoperability remains outstanding.
   awg-go-interop:
     runs-on: ubuntu-latest
     steps:
@@ -132,5 +132,5 @@ jobs:
           cd /tmp/amneziawg-go
           go build -o /tmp/amneziawg-go-bin .
 
-      - name: Run cross-implementation handshake and ICMP test
+      - name: Run cross-implementation handshake and ICMP/TCP/UDP tests
         run: sudo bash scripts/awg-go-interop.sh "$GITHUB_WORKSPACE/target/release/boringtun-cli" /tmp/amneziawg-go-bin

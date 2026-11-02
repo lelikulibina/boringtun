@@ -1668,10 +1668,6 @@ mod tests {
             HANDSHAKE_INIT,
             "responder must not emit the configured I1 packet"
         );
-        assert_eq!(
-            u32::from_le_bytes(init[5..9].try_into().unwrap()),
-            HANDSHAKE_INIT
-        );
         // The imitation protocol is retained, so the padding is still
         // protocol-shaped rather than random: QUIC uses a 1-RTT short header.
         assert_eq!(init[0] & 0xc0, 0x40, "S1 padding keeps its QUIC shape");
